@@ -257,7 +257,7 @@
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              model: "google/gemma-4-31b-it:free",
+              model: "google/gemma-3-27b-it:free",
               max_tokens: 8000,
               messages: [
                 { role: "system", content: SYSTEM_PROMPT },
@@ -265,7 +265,10 @@
               ],
             }),
           });
-          const data = await res.json();
+          const rawText = await res.text();
+          if (!rawText) throw new Error(`HTTP ${res.status}: 서버에서 빈 응답이 반환되었습니다.`);
+          let data;
+          try { data = JSON.parse(rawText); } catch { throw new Error(`HTTP ${res.status}: 응답을 파싱할 수 없습니다.`); }
           if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
           const reply = data.choices?.[0]?.message?.content ?? "응답을 가져오지 못했습니다.";
           setMessages(prev => [...prev, { role: "assistant", content: reply }]);
