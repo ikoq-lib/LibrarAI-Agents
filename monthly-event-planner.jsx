@@ -257,7 +257,7 @@ export default function App() {
     const userText = (text !== undefined ? text : input).trim();
     if (!userText || loading) return;
     if (!apiKey.trim()) {
-      setMessages(prev => [...prev, { role: "assistant", content: "좌측 사이드바에 Anthropic API 키를 먼저 입력해주세요." }]);
+      setMessages(prev => [...prev, { role: "assistant", content: "좌측 사이드바에 OpenRouter API 키를 먼저 입력해주세요." }]);
       return;
     }
     setInput("");
@@ -272,7 +272,7 @@ export default function App() {
           "Authorization": `Bearer ${apiKey.trim()}`,
         },
         body: JSON.stringify({
-          model: "google/gemma-4-31b-it:free",
+          model: "google/gemma-3-27b-it:free",
           max_tokens: 8000,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
@@ -280,7 +280,10 @@ export default function App() {
           ],
         }),
       });
-      const data = await res.json();
+      const rawText = await res.text();
+      if (!rawText) throw new Error(`HTTP ${res.status}: 서버에서 빈 응답이 반환되었습니다. API 키를 확인해주세요.`);
+      let data;
+      try { data = JSON.parse(rawText); } catch { throw new Error(`HTTP ${res.status}: 응답을 파싱할 수 없습니다.`); }
       if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
       const reply = data.choices?.[0]?.message?.content ?? "응답을 가져오지 못했습니다.";
       setMessages(prev => [...prev, { role: "assistant", content: reply }]);
