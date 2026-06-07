@@ -1,0 +1,148 @@
+══════════════════════════════════════════════════════════
+  2026년 5월 행사 포스터 — 나노 바나나 이미지 프롬프트 모음
+  주제: 함께 읽는 우리 — 가족 독서의 달
+══════════════════════════════════════════════════════════
+※ 사용법 안내
+  - [나노 바나나 프롬프트] 항목을 그대로 복사해 입력하세요.
+  - [포스터 삽입 텍스트]는 생성된 이미지 위에 별도 편집 툴로 올려주세요.
+  - 한글 텍스트는 이미지 생성 후 포토샵/캔바 등으로 추가하는 방식을 권장합니다.
+    (이미지 AI 엔진의 한글 렌더링 오류 방지)
+
+──────────────────────────────────────────────────────────
+① 어린이 북큐레이션 — 엄마·아빠랑 같이 읽고 싶은 책
+──────────────────────────────────────────────────────────
+[나노 바나나 프롬프트]
+A warm and cozy library book display poster illustration.
+A child and parent sitting together reading picture books,
+surrounded by a carefully curated stack of colorful children's books.
+Soft pastel tones — mint, peach, warm yellow.
+Flat illustration style, gentle and heartwarming atmosphere.
+Bookshelf in the background with warm lighting.
+Leave clean white space at top and bottom for text overlay.
+No text in image. High resolution poster format (A3 vertical).
+
+[포스터 삽입 텍스트 — 이미지 생성 후 편집 프로그램에서 추가]
+  메인 제목 : 엄마·아빠랑 같이 읽고 싶은 책
+  서브 타이틀: 어린이 북큐레이션
+  기간       : 2026년 5월 1일(금) ~ 5월 31일(일) 상시 전시
+  장소       : 도서관 내 전시 코너
+  주관       : ○○도서관
+
+──────────────────────────────────────────────────────────
+② 성인 북큐레이션 — 부모가 된다는 것
+──────────────────────────────────────────────────────────
+[나노 바나나 프롬프트]
+A sophisticated and emotionally warm library book curation poster illustration.
+An adult holding a book thoughtfully, with soft bokeh light filtering through a window.
+A curated selection of books with warm earth tones — beige, terracotta, sage green.
+Minimalist flat illustration style with a slightly literary, reflective mood.
+Subtle motifs of leaves, a teacup, and open books.
+Clean white space at top and bottom for text overlay.
+No text in image. High resolution poster format (A3 vertical).
+
+[포스터 삽입 텍스트 — 이미지 생성 후 편집 프로그램에서 추가]
+  메인 제목 : 부모가 된다는 것
+  서브 타이틀: 성인 북큐레이션
+  기간       : 2026년 5월 1일(금) ~ 5월 31일(일) 상시 전시
+  장소       : 도서관 내 전시 코너
+  주관       : ○○도서관
+
+──────────────────────────────────────────────────────────
+③ 어린이날 편지 쓰기
+──────────────────────────────────────────────────────────
+[나노 바나나 프롬프트]
+A joyful and playful Children's Day event poster illustration.
+A child sitting at a small desk, happily writing a letter with crayons and colorful pencils.
+Cheerful balloon decorations, small heart and star doodles floating around.
+Bright and festive color palette — sky blue, sunny yellow, coral pink.
+Cute flat illustration style, full of energy and warmth.
+Clean white space at top and bottom for text overlay.
+No text in image. High resolution poster format (A3 vertical).
+
+[포스터 삽입 텍스트 — 이미지 생성 후 편집 프로그램에서 추가]
+  메인 제목 : 어린이날 편지 쓰기
+  서브 타이틀: 가족에게 마음을 전해요
+  일시       : 2026년 5월 5일(화) 어린이날 10:00 ~ 17:00
+  장소       : 도서관 2·3강의실 (자유 방문)
+  대상       : 어린이 (초등 이하)
+  주관       : ○○도서관
+
+──────────────────────────────────────────────────────────
+④ 우리 가족 이야기책 만들기
+──────────────────────────────────────────────────────────
+[나노 바나나 프롬프트]
+A heartwarming family craft workshop poster illustration.
+A parent and child sitting together at a table, creating a small handmade minibook together.
+Craft supplies around them — scissors, glue, colored paper, markers.
+Warm golden light, cozy workshop atmosphere.
+Soft and round flat illustration style, family-friendly and inviting.
+Subtle bookshelf and library background elements.
+Clean white space at top and bottom for text overlay.
+No text in image. High resolution poster format (A3 vertical).
+
+[포스터 삽입 텍스트 — 이미지 생성 후 편집 프로그램에서 추가]
+  메인 제목 : 우리 가족 이야기책 만들기
+  서브 타이틀: 우리 가족만의 그림책을 완성해요
+  일시       : 2026년 5월 9일(토) 14:00 ~ 16:00
+  장소       : 도서관 2·3강의실
+  대상       : 어린이 + 보호자 (가족 단위) / 10가족 선착순
+  신청       : 사전 신청 필수
+  주관       : ○○도서관
+
+──────────────────────────────────────────────────────────
+⑤ 감성 글쓰기 워크숍
+──────────────────────────────────────────────────────────
+[나노 바나나 프롬프트]
+An elegant and emotionally rich writing workshop poster illustration.
+An adult woman sitting by a sunlit window, writing a heartfelt letter with a pen.
+A picture book open beside her, soft floral accents and dried flowers on the table.
+Warm and calming color palette — dusty rose, cream, soft lavender, warm beige.
+Gentle watercolor-meets-flat illustration style, literary and artistic mood.
+Clean white space at top and bottom for text overlay.
+No text in image. High resolution poster format (A3 vertical).
+
+[포스터 삽입 텍스트 — 이미지 생성 후 편집 프로그램에서 추가]
+  메인 제목 : 감성 글쓰기 워크숍
+  서브 타이틀: 그림책을 읽고 가족에게 편지를 씁니다
+  일시       : 2026년 5월 16일(토) 14:00 ~ 16:00
+  장소       : 도서관 1강의실
+  대상       : 성인 20명 (선착순)
+  신청       : 사전 신청 필수
+  주관       : ○○도서관
+
+──────────────────────────────────────────────────────────
+⑥ 독서 토론 살롱
+──────────────────────────────────────────────────────────
+[나노 바나나 프롬프트]
+A sophisticated reading discussion salon poster illustration.
+A small group of adults sitting in a circle in a cozy library setting,
+engaged in warm conversation with open books in hand.
+Soft library ambiance — wooden shelves, warm lamp light, plants.
+Muted and thoughtful color palette — deep teal, warm brown, cream, olive green.
+Modern flat illustration with a literary salon atmosphere.
+Clean white space at top and bottom for text overlay.
+No text in image. High resolution poster format (A3 vertical).
+
+[포스터 삽입 텍스트 — 이미지 생성 후 편집 프로그램에서 추가]
+  메인 제목 : 독서 토론 살롱
+  서브 타이틀: 함께 읽고 이야기 나누는 시간
+  일시       : 2026년 5월 23일(토) 14:00 ~ 16:00
+  장소       : 도서관 1강의실
+  대상       : 성인 20명 (선착순)
+  신청       : 사전 신청 필수
+  주관       : ○○도서관
+
+══════════════════════════════════════════════════════════
+  ※ 공통 스타일 가이드
+══════════════════════════════════════════════════════════
+  - 전체 색조   : 파스텔 & 웜톤 일관성 유지
+  - 일러스트 스타일: 플랫 일러스트 (flat illustration)
+  - 출력 비율   : A3 세로형 (297mm × 420mm)
+  - 해상도      : 300dpi 이상 (인쇄용)
+  - 텍스트 영역 : 이미지 상단 20%, 하단 20% 여백 확보 권장
+  - 한글 텍스트 : 반드시 이미지 생성 후 별도 편집 툴에서 추가
+                  (나눔고딕, 나눔명조 등 KS 완성형 폰트 사용 권장)
+
+══════════════════════════════════════════════════════════
+  작성일: 2026년 4월 12일     담당: 기획업무팀 기획담당
+══════════════════════════════════════════════════════════

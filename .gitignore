@@ -1,0 +1,16 @@
+# 환경변수 / API 키
+.env
+.env.local
+.env.*.local
+
+# API 키 텍스트 파일
+API/*.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# OS
+.DS_Store
+Thumbs.db

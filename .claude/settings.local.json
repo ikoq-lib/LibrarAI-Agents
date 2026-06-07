@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat /c/Users/User/Desktop/vibe_study/vibe_study/study-06/*)",
+      "Bash(mkdir -p /tmp/skill_extract)",
+      "Bash(unzip -o \"hwpx-autofill-conversion.skill\" -d /tmp/skill_extract)",
+      "Read(//tmp/skill_extract/**)",
+      "Bash(mkdir -p skill_extract)",
+      "Bash(unzip -o \"hwpx-autofill-conversion.skill\" -d skill_extract)",
+      "Bash(mkdir -p sample1_extract sample2_extract)",
+      "Bash(unzip -o \"\\(샘플양식1\\) 보고서 기본 양식.hwpx\" -d sample1_extract)",
+      "Bash(unzip -o \"\\(샘플양식2\\) 보고서 기반 양식\\(요약\\).hwpx\" -d sample2_extract)",
+      "Bash(zip -r \"../hwpx-autofill-conversion.skill\" hwpx-autofill-conversion/)",
+      "Bash(python3 -c ':*)",
+      "Bash(python:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('plugins',{}\\), indent=2, ensure_ascii=False\\)\\)\")",
+      "Read(//c/tmp/hwpx_build/**)",
+      "Bash(zip -X \"../2026년_5월_행사기획안.hwpx\" mimetype)",
+      "Bash(zip -r \"../2026년_5월_행사기획안.hwpx\" META-INF/ Contents/ Preview/)",
+      "Read(//tmp/**)",
+      "Bash(/c/Users/User/AppData/Local/Microsoft/WindowsApps/python3 --version)",
+      "Bash(where python:*)",
+      "Bash(where node:*)",
+      "Bash(where powershell:*)",
+      "Bash(python3 -c \"import zipfile; z=zipfile.ZipFile\\('C:/Users/User/Desktop/vibe_study/LibrarAI/2026년_5월_행사기획안.hwpx'\\); print\\(z.namelist\\(\\)\\)\")",
+      "Bash(py --version)",
+      "Bash(python3:*)",
+      "Bash(py:*)",
+      "Bash(vercel *)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}
