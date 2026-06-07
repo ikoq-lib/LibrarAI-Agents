@@ -1,7 +1,6 @@
 {
   "version": 2,
   "routes": [
-    { "src": "/api/chat", "dest": "/API/chat.js" },
     { "src": "/", "dest": "/monthly-event-planner.html" },
     { "src": "/(.*)", "dest": "/$1" }
   ]
