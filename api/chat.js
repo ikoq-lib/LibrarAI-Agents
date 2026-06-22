@@ -15,10 +15,21 @@ module.exports = async function handler(req, res) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://librar-ai-agents.vercel.app',
+        'X-Title': 'LibrarAI Monthly Event Planner',
       },
       body: JSON.stringify(req.body),
     });
-    const data = await upstream.json();
+    const text = await upstream.text();
+    if (!text || !text.trim()) {
+      return res.status(502).json({ error: `OpenRouter에서 빈 응답이 반환되었습니다 (HTTP ${upstream.status}). 잠시 후 다시 시도하세요.` });
+    }
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return res.status(502).json({ error: `OpenRouter 응답 파싱 실패: ${text.slice(0, 200)}` });
+    }
     res.status(upstream.status).json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
