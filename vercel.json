@@ -1,7 +1,6 @@
 {
   "version": 2,
-  "routes": [
-    { "src": "/", "dest": "/monthly-event-planner.html" },
-    { "src": "/(.*)", "dest": "/$1" }
+  "rewrites": [
+    { "source": "/", "destination": "/monthly-event-planner.html" }
   ]
 }
