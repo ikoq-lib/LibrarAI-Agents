@@ -290,10 +290,14 @@
           }),
         });
         const rawText = await res.text();
+        if (res.status === 404) {
+          throw new Error("채팅 API 엔드포인트를 찾을 수 없습니다. Vercel 서버리스 함수 배포 상태를 확인해주세요.");
+        }
         if (!rawText || !rawText.trim()) throw new Error(`HTTP ${res.status}: 빈 응답이 반환되었습니다. 잠시 후 다시 시도해주세요.`);
         let data;
         try { data = JSON.parse(rawText); } catch { throw new Error(`HTTP ${res.status}: 응답을 파싱할 수 없습니다.`); }
         if (data.error) throw new Error(typeof data.error === "string" ? data.error : (data.error.message || JSON.stringify(data.error)));
+        if (!res.ok) throw new Error(`채팅 API 요청에 실패했습니다. (HTTP ${res.status})`);
         return data.choices?.[0]?.message?.content ?? "응답을 가져오지 못했습니다.";
       };
 
@@ -315,7 +319,7 @@
           const reply = await callApi(sysPrompt, newMsgs);
           setMsgs(prev => [...prev, { role: "assistant", content: reply }]);
         } catch (err) {
-          setMsgs(prev => [...prev, { role: "assistant", content: "오류가 발생했습니다.\n\n" + err.message + "\n\nAPI 키를 확인하고 다시 시도해주세요." }]);
+          setMsgs(prev => [...prev, { role: "assistant", content: "오류가 발생했습니다.\n\n" + err.message }]);
         }
         setLoading(false);
       };
