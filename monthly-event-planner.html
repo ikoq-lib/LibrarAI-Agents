@@ -128,7 +128,9 @@
 - 특정 매체만 요청: 해당 매체만 작성
 - 수정 요청: 해당 부분만 다시 작성
 - 기획안에 없는 정보는 임의로 창작하지 않고 [정보] 표시
-- 전체 출력은 마크다운 형식으로 가독성 있게 작성`;
+- 전체 출력은 마크다운 형식으로 가독성 있게 작성
+- 모든 문장은 현대 한국어 한글로 작성하고, 한자·중국어·일본어 문자를 섞지 않습니다
+- 출력 전 글자 깨짐이나 한자 혼입이 없는지 교정한 뒤 최종본만 제시합니다`;
 
     const MONTHS = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
 
@@ -276,17 +278,15 @@
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
       }, [messages, loading]);
 
-      const callApi = async (sysPrompt, msgs) => {
+      const requestApi = async (messages, temperature) => {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             model: "llama-3.3-70b-versatile",
             max_tokens: 8000,
-            messages: [
-              { role: "system", content: sysPrompt },
-              ...msgs.map(m => ({ role: m.role, content: m.content })),
-            ],
+            temperature,
+            messages,
           }),
         });
         const rawText = await res.text();
@@ -299,6 +299,30 @@
         if (data.error) throw new Error(typeof data.error === "string" ? data.error : (data.error.message || JSON.stringify(data.error)));
         if (!res.ok) throw new Error(`채팅 API 요청에 실패했습니다. (HTTP ${res.status})`);
         return data.choices?.[0]?.message?.content ?? "응답을 가져오지 못했습니다.";
+      };
+
+      const callApi = async (sysPrompt, msgs) => {
+        const isPrRequest = sysPrompt === PR_SYSTEM_PROMPT;
+        const apiMessages = [
+          { role: "system", content: sysPrompt },
+          ...msgs.map(m => ({ role: m.role, content: m.content })),
+        ];
+        let reply = await requestApi(apiMessages, isPrRequest ? 0.2 : 0.7);
+
+        // Groq가 간혹 정상 한글 대신 한자/CJK 문자를 섞어 생성하므로
+        // 홍보물 응답에서만 이를 감지해 한 번 자동 교정한다.
+        const hasBrokenKorean = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFFFD]/.test(reply);
+        if (isPrRequest && hasBrokenKorean) {
+          reply = await requestApi([
+            ...apiMessages,
+            { role: "assistant", content: reply },
+            {
+              role: "user",
+              content: "위 답변의 내용과 형식은 유지하되, 섞여 있는 한자·중국어·일본어 문자와 깨진 글자를 모두 자연스러운 현대 한국어 한글로 고쳐주세요. 설명 없이 교정된 전체 최종본만 출력하세요.",
+            },
+          ], 0);
+        }
+        return reply;
       };
 
       const sendMessage = async (textArg) => {
