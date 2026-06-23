@@ -27,7 +27,9 @@
   <script type="text/babel">
     const { useState, useRef, useEffect } = React;
 
-    const SYSTEM_PROMPT = `당신은 한국 공공도서관의 월별 행사 기획 전문가입니다. 도서관 이용자의 연령층과 관심사를 깊이 이해하고, 독서 문화 진흥과 지역사회 참여를 이끌어내는 창의적이고 실현 가능한 행사를 기획하는 것이 당신의 전문 영역입니다.
+    // ── System Prompts ────────────────────────────────────────────
+
+    const PLANNER_SYSTEM_PROMPT = `당신은 한국 공공도서관의 월별 행사 기획 전문가입니다. 도서관 이용자의 연령층과 관심사를 깊이 이해하고, 독서 문화 진흥과 지역사회 참여를 이끌어내는 창의적이고 실현 가능한 행사를 기획하는 것이 당신의 전문 영역입니다.
 
 ## 역할 및 책임
 당신은 매월 하나의 핵심 주제를 중심으로 도서관 행사 전체 기획안을 작성합니다. 기획은 두 단계로 진행됩니다.
@@ -83,15 +85,11 @@
 ---
 
 ## 유연한 기획 원칙
-
-기본 구성은 6개 행사이지만, 사용자의 요청이 있으면 **반드시** 그에 맞게 조정합니다.
-- **행사 개수 조정**: "4개만 해줘", "8개로 늘려줘" 등 요청 시 그에 맞게 구성 변경
-- **대상 조정**: "어린이 위주로", "성인 중심으로" 요청 시 해당 대상 비중 확대
-- **유형 조정**: "북큐레이션 없이", "체험 위주로", "강연만" 등 요청 시 조정
+- **행사 개수 조정**: "4개만 해줘", "8개로 늘려줘" 등 요청 시 구성 변경
+- **대상 조정**: "어린이 위주로", "성인 중심으로" 요청 시 비중 확대
+- **유형 조정**: "북큐레이션 없이", "체험 위주로" 등 요청 시 조정
 - **주제 직접 지정**: 사용자가 주제를 직접 제시하면 후보 제시 단계 생략 가능
 - **부분 재기획**: 특정 행사만 수정 요청 시 해당 행사만 다시 작성
-
----
 
 ## 출력 형식 규칙
 - 전체 기획안은 마크다운 형식으로 작성하여 가독성을 높입니다
@@ -103,6 +101,34 @@
 - 예산·공간·인력을 고려한 실현 가능한 행사를 기획합니다
 - 매년 반복되는 뻔한 행사보다 참신한 접근을 추구합니다
 - 사용자가 월을 명시하지 않은 경우, 현재 날짜 기준 다음 달을 가정하고 진행 의사를 묻습니다`;
+
+    const PR_SYSTEM_PROMPT = `당신은 한국 공공도서관의 홍보 전문가입니다. 확정된 행사 기획안을 바탕으로 홍보물을 작성합니다.
+
+담당자 표기: 기획업무팀 기획담당
+알 수 없는 정보(전화번호, 주소 등)는 반드시 [정보] 형식의 플레이스홀더로 표시합니다.
+
+---
+
+## 홍보물 1: 보도자료
+- 배포일, 제목/부제, 리드 문단(육하원칙), 본문(행사 취지·내용·대상·장소·신청방법), 관계자 코멘트(사서/관장 인용 형식), 문의처
+- 문체: 격식체, 3인칭 보도 스타일
+
+## 홍보물 2: 홈페이지/인쇄물 포스터
+- 이미지 요소 지시문: 배경 이미지, 색상 테마, 그래픽 요소를 구체적으로 묘사
+- 헤드라인, 핵심 정보(기간·장소·대상·신청방법·문의처), 텍스트 레이아웃 가이드
+
+## 홍보물 3: SNS(인스타그램)
+- 이미지: 1:1 정방형, 포스터와 톤 통일, 핵심 정보만 간결하게 구성
+- 캡션: 친근하고 감각적인 문체, 이모지 적절히 사용, 해시태그 포함
+
+---
+
+## 작업 방식
+- 3종 모두 요청: 보도자료 → 포스터 → SNS 순서로 모두 작성
+- 특정 매체만 요청: 해당 매체만 작성
+- 수정 요청: 해당 부분만 다시 작성
+- 기획안에 없는 정보는 임의로 창작하지 않고 [정보] 표시
+- 전체 출력은 마크다운 형식으로 가독성 있게 작성`;
 
     const MONTHS = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
 
@@ -231,64 +257,113 @@
     // ── App ───────────────────────────────────────────────────────
 
     function App() {
-      const INIT_MSG = "안녕하세요! 월별 행사 기획 전문 AI입니다.\n\n기획할 월을 알려주시거나, 좌측의 월 버튼을 눌러 바로 시작하세요.\n\n예시:\n- \"7월 행사를 기획해주세요\"\n- \"어린이 위주로 4개 행사만 기획해줘\"\n- \"주제는 환경으로 바로 기획해줘\"";
+      const PLANNER_INIT = "안녕하세요! 월별 행사 기획 전문 AI입니다.\n\n기획할 월을 알려주시거나, 좌측의 월 버튼을 눌러 바로 시작하세요.\n\n예시:\n- \"7월 행사를 기획해주세요\"\n- \"어린이 위주로 4개 행사만 기획해줘\"\n- \"주제는 환경으로 바로 기획해줘\"";
+      const PR_INIT = "안녕하세요! 홍보물 작성 AI입니다.\n\n**행사 기획** 탭에서 기획안을 완성한 뒤, 입력창 위의 **「기획 확정 → 홍보물 작성」** 버튼을 눌러주세요.\n\n확정된 기획안을 바탕으로 다음 3종을 작성해드립니다:\n- 📰 보도자료\n- 🖼️ 홈페이지/인쇄물 포스터\n- 📱 SNS(인스타그램) 콘텐츠";
 
-      const [messages, setMessages] = useState([{ role: "assistant", content: INIT_MSG }]);
+      const [activeTab, setActiveTab] = useState("planner");
+      const [plannerMsgs, setPlannerMsgs] = useState([{ role: "assistant", content: PLANNER_INIT }]);
+      const [prMsgs, setPrMsgs] = useState([{ role: "assistant", content: PR_INIT }]);
       const [input, setInput] = useState("");
       const [loading, setLoading] = useState(false);
 
       const bottomRef = useRef(null);
       const textareaRef = useRef(null);
 
+      const messages = activeTab === "planner" ? plannerMsgs : prMsgs;
+      const hasPlan = plannerMsgs.some(m => m.role === "user");
+
       useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
       }, [messages, loading]);
 
-      const sendMessage = async (text) => {
-        const userText = (text !== undefined ? text : input).trim();
+      const callApi = async (sysPrompt, msgs) => {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            max_tokens: 8000,
+            messages: [
+              { role: "system", content: sysPrompt },
+              ...msgs.map(m => ({ role: m.role, content: m.content })),
+            ],
+          }),
+        });
+        const rawText = await res.text();
+        if (!rawText || !rawText.trim()) throw new Error(`HTTP ${res.status}: 빈 응답이 반환되었습니다. 잠시 후 다시 시도해주세요.`);
+        let data;
+        try { data = JSON.parse(rawText); } catch { throw new Error(`HTTP ${res.status}: 응답을 파싱할 수 없습니다.`); }
+        if (data.error) throw new Error(typeof data.error === "string" ? data.error : (data.error.message || JSON.stringify(data.error)));
+        return data.choices?.[0]?.message?.content ?? "응답을 가져오지 못했습니다.";
+      };
+
+      const sendMessage = async (textArg) => {
+        const userText = (textArg !== undefined ? textArg : input).trim();
         if (!userText || loading) return;
         setInput("");
-        const newMessages = [...messages, { role: "user", content: userText }];
-        setMessages(newMessages);
+
+        const tab = activeTab;
+        const currentMsgs = tab === "planner" ? plannerMsgs : prMsgs;
+        const setMsgs = tab === "planner" ? setPlannerMsgs : setPrMsgs;
+        const sysPrompt = tab === "planner" ? PLANNER_SYSTEM_PROMPT : PR_SYSTEM_PROMPT;
+
+        const newMsgs = [...currentMsgs, { role: "user", content: userText }];
+        setMsgs(newMsgs);
         setLoading(true);
 
         try {
-          const res = await fetch("/api/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: "llama-3.3-70b-versatile",
-              max_tokens: 8000,
-              messages: [
-                { role: "system", content: SYSTEM_PROMPT },
-                ...newMessages.map(m => ({ role: m.role, content: m.content })),
-              ],
-            }),
-          });
-          const rawText = await res.text();
-          if (!rawText) throw new Error(`HTTP ${res.status}: 서버에서 빈 응답이 반환되었습니다.`);
-          let data;
-          try { data = JSON.parse(rawText); } catch { throw new Error(`HTTP ${res.status}: 응답을 파싱할 수 없습니다.`); }
-          if (data.error) throw new Error(typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error)));
-          const reply = data.choices?.[0]?.message?.content ?? "응답을 가져오지 못했습니다.";
-          setMessages(prev => [...prev, { role: "assistant", content: reply }]);
+          const reply = await callApi(sysPrompt, newMsgs);
+          setMsgs(prev => [...prev, { role: "assistant", content: reply }]);
         } catch (err) {
-          setMessages(prev => [...prev, {
-            role: "assistant",
-            content: "오류가 발생했습니다.\n\n" + err.message + "\n\nAPI 키를 확인하고 다시 시도해주세요."
-          }]);
+          setMsgs(prev => [...prev, { role: "assistant", content: "오류가 발생했습니다.\n\n" + err.message + "\n\nAPI 키를 확인하고 다시 시도해주세요." }]);
         }
         setLoading(false);
+      };
+
+      const confirmPlan = async () => {
+        if (loading) return;
+        const lastAI = [...plannerMsgs].reverse().find(m => m.role === "assistant" && m.content !== PLANNER_INIT);
+        if (!lastAI) return;
+
+        const userMsg = `다음 행사 기획안이 확정되었습니다. 홍보물 3종(보도자료, 홈페이지/인쇄물 포스터, SNS 콘텐츠)을 모두 작성해주세요.\n\n---\n${lastAI.content}`;
+        setActiveTab("pr");
+        const initMsgs = [{ role: "user", content: userMsg }];
+        setPrMsgs(initMsgs);
+        setLoading(true);
+
+        try {
+          const reply = await callApi(PR_SYSTEM_PROMPT, initMsgs);
+          setPrMsgs([...initMsgs, { role: "assistant", content: reply }]);
+        } catch (err) {
+          setPrMsgs([...initMsgs, { role: "assistant", content: "오류가 발생했습니다.\n\n" + err.message }]);
+        }
+        setLoading(false);
+      };
+
+      const resetCurrent = () => {
+        if (activeTab === "planner") {
+          setPlannerMsgs([{ role: "assistant", content: PLANNER_INIT }]);
+        } else {
+          setPrMsgs([{ role: "assistant", content: PR_INIT }]);
+        }
+        setInput("");
       };
 
       const handleKeyDown = (e) => {
         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
       };
 
-      const resetAll = () => {
-        setMessages([{ role: "assistant", content: INIT_MSG }]);
-        setInput("");
-      };
+      const sidebarBtn = (label, onClick) => (
+        <button onClick={onClick} disabled={loading} key={label}
+          style={{
+            width: "100%", padding: "9px 12px", marginBottom: "4px",
+            background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)",
+            borderRadius: "8px", color: "rgba(255,255,255,0.85)",
+            cursor: loading ? "not-allowed" : "pointer",
+            textAlign: "left", fontSize: "12px", fontFamily: "inherit",
+          }}
+        >{label}</button>
+      );
 
       return (
         <div style={{ display: "flex", height: "100vh", fontFamily: "'Noto Sans KR','Apple SD Gothic Neo',sans-serif", background: "#f0f7f5", fontSize: "14px" }}>
@@ -298,73 +373,81 @@
             width: "220px", background: "linear-gradient(160deg,#004d40 0%,#00695c 55%,#00897b 100%)",
             display: "flex", flexDirection: "column", flexShrink: 0, boxShadow: "2px 0 12px rgba(0,0,0,0.15)",
           }}>
-            {/* 타이틀 */}
             <div style={{ padding: "24px 16px 20px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
               <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.45)", letterSpacing: "2px", marginBottom: "6px" }}>LIBRARY AI</div>
               <div style={{ fontSize: "15px", fontWeight: "700", color: "white", lineHeight: "1.4" }}>월별 행사<br />기획 에이전트</div>
-              <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginTop: "6px" }}>공공도서관 월별 행사 기획</div>
+              <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.5)", marginTop: "6px" }}>기획 · 홍보물 작성</div>
             </div>
 
-            {/* 빠른 시작 + 월 선택 */}
             <div style={{ padding: "12px 8px", flex: 1, overflowY: "auto" }}>
-              <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.4)", letterSpacing: "1px", padding: "0 6px", marginBottom: "8px" }}>빠른 시작</div>
-              {[
-                { label: "이번 달 기획", text: "이번 달 행사를 기획해주세요." },
-                { label: "다음 달 기획", text: "다음 달 행사를 기획해주세요." },
-              ].map(qp => (
-                <button key={qp.label} onClick={() => sendMessage(qp.text)} disabled={loading}
-                  style={{
-                    width: "100%", padding: "9px 12px", marginBottom: "4px",
-                    background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)",
-                    borderRadius: "8px", color: "rgba(255,255,255,0.85)",
-                    cursor: loading ? "not-allowed" : "pointer",
-                    textAlign: "left", fontSize: "12px", fontFamily: "inherit",
-                  }}
-                  onMouseEnter={e => { if (!loading) e.currentTarget.style.background = "rgba(255,255,255,0.18)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
-                >{qp.label}</button>
-              ))}
-
-              <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.4)", letterSpacing: "1px", padding: "10px 6px 6px" }}>월 선택</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px", padding: "0 2px" }}>
-                {MONTHS.map(m => (
-                  <button key={m} onClick={() => sendMessage(m + " 행사를 기획해주세요.")} disabled={loading}
-                    style={{
-                      padding: "7px 4px", background: "rgba(255,255,255,0.08)",
-                      border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px",
-                      color: "rgba(255,255,255,0.75)", cursor: loading ? "not-allowed" : "pointer",
-                      fontSize: "11px", fontFamily: "inherit", textAlign: "center",
-                    }}
-                    onMouseEnter={e => { if (!loading) e.currentTarget.style.background = "rgba(255,255,255,0.18)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-                  >{m}</button>
-                ))}
-              </div>
+              {activeTab === "planner" ? (
+                <>
+                  <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.4)", letterSpacing: "1px", padding: "0 6px", marginBottom: "8px" }}>빠른 시작</div>
+                  {sidebarBtn("이번 달 기획", () => sendMessage("이번 달 행사를 기획해주세요."))}
+                  {sidebarBtn("다음 달 기획", () => sendMessage("다음 달 행사를 기획해주세요."))}
+                  <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.4)", letterSpacing: "1px", padding: "10px 6px 6px" }}>월 선택</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px", padding: "0 2px" }}>
+                    {MONTHS.map(m => (
+                      <button key={m} onClick={() => sendMessage(m + " 행사를 기획해주세요.")} disabled={loading}
+                        style={{
+                          padding: "7px 4px", background: "rgba(255,255,255,0.08)",
+                          border: "1px solid rgba(255,255,255,0.12)", borderRadius: "6px",
+                          color: "rgba(255,255,255,0.75)", cursor: loading ? "not-allowed" : "pointer",
+                          fontSize: "11px", fontFamily: "inherit", textAlign: "center",
+                        }}
+                      >{m}</button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.4)", letterSpacing: "1px", padding: "0 6px", marginBottom: "8px" }}>홍보물 선택</div>
+                  {sidebarBtn("📰 보도자료만", () => sendMessage("보도자료만 작성해주세요."))}
+                  {sidebarBtn("🖼️ 포스터만", () => sendMessage("홈페이지/인쇄물 포스터만 작성해주세요."))}
+                  {sidebarBtn("📱 SNS만", () => sendMessage("SNS(인스타그램) 콘텐츠만 작성해주세요."))}
+                  {sidebarBtn("✨ 3종 모두", () => sendMessage("홍보물 3종을 모두 작성해주세요."))}
+                </>
+              )}
             </div>
 
-            {/* 초기화 */}
             <div style={{ padding: "12px 8px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-              <button onClick={resetAll}
+              <button onClick={resetCurrent}
                 style={{
                   width: "100%", padding: "8px", background: "rgba(255,255,255,0.07)",
                   border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px",
                   color: "rgba(255,255,255,0.6)", cursor: "pointer", fontSize: "12px", fontFamily: "inherit",
                 }}
-              >↺ 대화 초기화</button>
+              >↺ 현재 탭 초기화</button>
             </div>
           </div>
 
           {/* 메인 영역 */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-            {/* 헤더 */}
-            <div style={{
-              padding: "14px 24px", background: "white", borderBottom: "1px solid #d0ebe8",
-              display: "flex", alignItems: "center", gap: "10px", boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-            }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#4caf50" }} />
-              <span style={{ fontWeight: "700", color: "#004d40", fontSize: "15px" }}>월별 행사 기획 에이전트</span>
-              <span style={{ fontSize: "12px", color: "#999", marginLeft: "4px" }}>공공도서관 월별 행사 기획 전문 AI</span>
+            {/* 탭 바 */}
+            <div style={{ display: "flex", background: "white", borderBottom: "1px solid #d0ebe8", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+              {[
+                { id: "planner", icon: "📅", label: "행사 기획" },
+                { id: "pr",      icon: "📢", label: "홍보물 작성" },
+              ].map(tab => (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    padding: "14px 24px", border: "none", background: "transparent",
+                    borderBottom: activeTab === tab.id ? "2px solid #00897b" : "2px solid transparent",
+                    color: activeTab === tab.id ? "#004d40" : "#999",
+                    fontWeight: activeTab === tab.id ? "700" : "400",
+                    fontSize: "14px", cursor: "pointer", fontFamily: "inherit",
+                    display: "flex", alignItems: "center", gap: "6px",
+                  }}
+                >
+                  {tab.icon} {tab.label}
+                  {tab.id === "pr" && hasPlan && (
+                    <span style={{ fontSize: "10px", background: "#00897b", color: "white", borderRadius: "10px", padding: "1px 7px", marginLeft: "2px" }}>
+                      준비됨
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
 
             {/* 메시지 영역 */}
@@ -374,10 +457,12 @@
                   {msg.role === "assistant" && (
                     <div style={{
                       width: "32px", height: "32px", borderRadius: "50%", flexShrink: 0,
-                      background: "linear-gradient(135deg,#004d40,#00897b)",
+                      background: activeTab === "planner"
+                        ? "linear-gradient(135deg,#004d40,#00897b)"
+                        : "linear-gradient(135deg,#5c35a0,#7b52cc)",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: "13px", color: "white", fontWeight: "700",
-                    }}>AI</div>
+                      fontSize: "11px", color: "white", fontWeight: "700",
+                    }}>{activeTab === "planner" ? "기획" : "PR"}</div>
                   )}
                   <div style={{
                     maxWidth: "75%",
@@ -404,15 +489,16 @@
                 </div>
               ))}
 
-              {/* 로딩 */}
               {loading && (
                 <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
                   <div style={{
                     width: "32px", height: "32px", borderRadius: "50%",
-                    background: "linear-gradient(135deg,#004d40,#00897b)",
+                    background: activeTab === "planner"
+                      ? "linear-gradient(135deg,#004d40,#00897b)"
+                      : "linear-gradient(135deg,#5c35a0,#7b52cc)",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: "13px", color: "white", fontWeight: "700",
-                  }}>AI</div>
+                    fontSize: "11px", color: "white", fontWeight: "700",
+                  }}>{activeTab === "planner" ? "기획" : "PR"}</div>
                   <div style={{
                     padding: "14px 18px", borderRadius: "4px 18px 18px 18px",
                     background: "white", boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
@@ -430,8 +516,21 @@
               <div ref={bottomRef} />
             </div>
 
-            {/* 입력창 */}
-            <div style={{ padding: "12px 24px 16px", background: "white", borderTop: "1px solid #d0ebe8" }}>
+            {/* 입력 영역 */}
+            <div style={{ padding: "8px 24px 16px", background: "white", borderTop: "1px solid #d0ebe8" }}>
+              {activeTab === "planner" && hasPlan && (
+                <button onClick={confirmPlan} disabled={loading}
+                  style={{
+                    width: "100%", padding: "10px", marginBottom: "8px",
+                    background: loading ? "#b2dfdb" : "linear-gradient(135deg,#5c35a0,#7b52cc)",
+                    border: "none", borderRadius: "10px", color: "white",
+                    fontSize: "13px", fontWeight: "700", cursor: loading ? "not-allowed" : "pointer",
+                    fontFamily: "inherit", letterSpacing: "0.3px",
+                  }}
+                >
+                  기획 확정 → 홍보물 작성하기
+                </button>
+              )}
               <div style={{
                 display: "flex", gap: "8px", alignItems: "flex-end",
                 background: "#f0f7f5", borderRadius: "14px", padding: "8px",
@@ -442,7 +541,9 @@
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="메시지를 입력하세요... (Shift+Enter: 줄바꿈)"
+                  placeholder={activeTab === "planner"
+                    ? "기획할 월이나 요청을 입력하세요... (Shift+Enter: 줄바꿈)"
+                    : "홍보물 수정 요청을 입력하세요... (Shift+Enter: 줄바꿈)"}
                   rows={1}
                   style={{
                     flex: 1, border: "none", background: "transparent", resize: "none",
@@ -463,7 +564,9 @@
                 >▶</button>
               </div>
               <div style={{ fontSize: "11px", color: "#aaa", marginTop: "5px", textAlign: "center" }}>
-                Enter 전송 · Shift+Enter 줄바꿈 · 행사 개수나 방향을 자유롭게 요청하세요
+                {activeTab === "planner"
+                  ? "Enter 전송 · Shift+Enter 줄바꿈 · 행사 개수나 방향을 자유롭게 요청하세요"
+                  : "Enter 전송 · Shift+Enter 줄바꿈 · 특정 매체 수정을 요청하세요"}
               </div>
             </div>
           </div>
