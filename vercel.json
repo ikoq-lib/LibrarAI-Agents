@@ -1,11 +1,9 @@
 {
-  "version": 2,
-  "builds": [
-    { "src": "api/chat.js", "use": "@vercel/node" },
-    { "src": "monthly-event-planner.html", "use": "@vercel/static" }
+  "rewrites": [
+    { "source": "/", "destination": "/LibrarAI.html" }
   ],
-  "routes": [
-    { "src": "/api/chat", "dest": "/api/chat.js" },
-    { "src": "/", "dest": "/monthly-event-planner.html" }
-  ]
+  "functions": {
+    "api/chat.js": { "maxDuration": 30 },
+    "api/gemini.js": { "maxDuration": 30 }
+  }
 }
