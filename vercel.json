@@ -4,6 +4,7 @@
   ],
   "functions": {
     "api/chat.js": { "maxDuration": 30 },
-    "api/gemini.js": { "maxDuration": 30 }
+    "api/gemini.js": { "maxDuration": 120 },
+    "api/naver-books.js": { "maxDuration": 30 }
   }
 }
