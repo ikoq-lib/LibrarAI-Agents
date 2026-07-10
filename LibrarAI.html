@@ -923,7 +923,7 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 - FN-02 복본·균형·희망도서 교차 확인: 후보를 B-03(복본 판정)·B-05(장서균형 결핍지수)에 위임하고 결과를 반영, 희망도서 요청과 교차해 우선순위 상향
 - FN-03 선정 기준 점수화: 이용자수요 40%(희망도서·유사도서 대출) + 사회적관심도 25%(베스트셀러 순위) + 장서균형 25%(B-05 결핍지수) + 출판시의성 10%
 - FN-04 예산 배분 초안: 점수 순 정렬, 희망도서는 상위 20% 이내 필수 포함, 단일 출판사 30%·동일 KDC 40% 초과 시 경고
-- FN-05 Excel 선정 목록 + 기안문 초안 생성 (hwpx)
+- FN-05 Excel 선정 목록 + 기안문 초안 생성 (hwpx): 사서가 선정 목록 확정을 요청하면 응답에 반드시 아래 "Excel 출력 형식"의 ===엑셀시작===~===엑셀끝=== 구분자로 선정 목록 표를 포함하십시오. 기안문도 함께 요청받았다면 ===기안문시작===~===기안문끝===(및 필요 시 ===첨부시작===~===첨부끝===)을 이어서 포함하십시오.
 - FN-06 사서 검토·승인 대기
 
 ## 희망도서 반려 기준 (자동 제외 + 사유 명시)
@@ -935,6 +935,14 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 - 사서 승인 없이 외부 발주 시스템에 데이터를 전송하지 않습니다
 - 예산 초과 자료는 자동 제외하고 사유를 명시합니다
 - 모든 응답은 한국어로 작성합니다
+
+## Excel 출력 형식 (선정 목록 확정 시 필수)
+===엑셀시작===
+| 순번 | 제목 | 저자 | 출판사 | ISBN | 정가 | 출간일 | KDC분야 | 비고 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | ... | ... | ... | ... | ... | ... | ... | ... |
+===엑셀끝===
+표 형식을 벗어난 다른 텍스트(설명·요약)는 이 구분자 밖에 작성하십시오. 실제 파일 다운로드는 시스템이 이 표를 파싱해 처리하므로, 다운로드 링크나 파일 경로를 직접 언급하지 마십시오.
 
 ## 최종 요약 출력 형식
 === 수서 초안 생성 완료 ===
@@ -1920,6 +1928,12 @@ ${extra}
       "pr":                   { gradient: "var(--grad-d5)", label: "F-01" },
     };
 
+    // 마크다운 표(파이프 구분) 줄 배열을 헤더 구분선을 제거한 2차원 배열로 변환 — 화면 렌더링과 Excel 내보내기가 공유
+    const parseMarkdownTableRows = (tableLines) =>
+      tableLines
+        .map(r => r.split("|").map(c => c.trim()).filter((_, j, a) => j > 0 && j < a.length - 1))
+        .filter(r => !r.every(c => /^[-:]+$/.test(c)));
+
     // ── MarkdownRenderer ──────────────────────────────────────────
     function MarkdownRenderer({ text }) {
       const lines = text.split("\n");
@@ -1930,9 +1944,7 @@ ${extra}
 
       const flushTable = () => {
         if (!tableBuffer.length) return;
-        const rows = tableBuffer
-          .map(r => r.split("|").map(c => c.trim()).filter((_, j, a) => j > 0 && j < a.length - 1))
-          .filter(r => !r.every(c => /^[-:]+$/.test(c)));
+        const rows = parseMarkdownTableRows(tableBuffer);
         elements.push(
           <div key={"t" + elements.length} style={{ overflowX: "auto", margin: "10px 0" }}>
             <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "13px", fontVariantNumeric: "tabular-nums" }}>
@@ -1991,6 +2003,40 @@ ${extra}
       if (inTable) flushTable();
       return <div>{elements}</div>;
     }
+
+    // ── Excel(xlsx) 다운로드 — B-01 FN-05 선정 목록 ────────────────
+    let _xlsxLoadPromise = null;
+    const loadXLSX = () => {
+      if (window.XLSX) return Promise.resolve(window.XLSX);
+      if (_xlsxLoadPromise) return _xlsxLoadPromise;
+      _xlsxLoadPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js";
+        script.onload = () => resolve(window.XLSX);
+        script.onerror = () => reject(new Error("Excel 라이브러리 로드에 실패했습니다. 네트워크를 확인해주세요."));
+        document.head.appendChild(script);
+      });
+      return _xlsxLoadPromise;
+    };
+
+    const downloadAsExcel = async (tableMarkdown, filenameBase) => {
+      const XLSXLib = await loadXLSX();
+      const rows = parseMarkdownTableRows(tableMarkdown.trim().split("\n"));
+      if (!rows.length) throw new Error("표 형식을 인식할 수 없습니다.");
+      const ws = XLSXLib.utils.aoa_to_sheet(rows);
+      const wb = XLSXLib.utils.book_new();
+      XLSXLib.utils.book_append_sheet(wb, ws, "선정목록");
+      const wbout = XLSXLib.write(wb, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${filenameBase}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    };
 
     // ── hwpx 다운로드 ──────────────────────────────────────────────
     // hwpx-autofill-conversion 스킬과 동일한 방식: 검증된 기본 양식(hwpx_base_template.js에
@@ -2062,19 +2108,25 @@ ${extra}
 
     // ── TabbedDocument ────────────────────────────────────────────
     function TabbedDocument({ content }) {
-      const [activeTab, setActiveTab] = useState("기안문");
-      const [downloading, setDownloading] = useState(false);
-      const [downloadError, setDownloadError] = useState("");
-      const draftM = content.match(/===기안문시작===([\s\S]*?)===기안문끝===/);
-      const attachM = content.match(/===첨부시작===([\s\S]*?)===첨부끝===/);
-      const beforeM = content.match(/^([\s\S]*?)===기안문시작===/);
-      const afterM = content.match(/===첨부끝===([\s\S]*)$/);
+      // 엑셀 블록은 기안문/첨부 구분자와 독립적으로 먼저 추출·제거한 뒤, 남은 텍스트에 기존 기안문/첨부 파싱을 적용한다
+      // (블록 등장 순서가 섞여도 before/after 텍스트에 구분자 원문이 그대로 남지 않도록).
+      const excelM = content.match(/===엑셀시작===([\s\S]*?)===엑셀끝===/);
+      const excel = excelM ? excelM[1].trim() : null;
+      const rest = excelM ? content.replace(excelM[0], "").trim() : content;
+      const draftM = rest.match(/===기안문시작===([\s\S]*?)===기안문끝===/);
+      const attachM = rest.match(/===첨부시작===([\s\S]*?)===첨부끝===/);
+      const beforeM = rest.match(/^([\s\S]*?)===기안문시작===/);
+      const afterM = rest.match(/===첨부끝===([\s\S]*)$/);
       const draft = draftM ? draftM[1].trim() : null;
       const attach = attachM ? attachM[1].trim() : null;
-      const before = beforeM ? beforeM[1].trim() : "";
+      const before = beforeM ? beforeM[1].trim() : (!draftM ? rest : "");
       const after = afterM ? afterM[1].trim() : "";
-      if (!draft && !attach) return <MarkdownRenderer text={content} />;
+      const [activeTab, setActiveTab] = useState(excel ? "엑셀" : "기안문");
+      const [downloading, setDownloading] = useState(false);
+      const [downloadError, setDownloadError] = useState("");
+      if (!draft && !attach && !excel) return <MarkdownRenderer text={content} />;
       const tabs = [];
+      if (excel) tabs.push("엑셀");
       if (draft) tabs.push("기안문");
       if (attach) tabs.push("첨부문서");
 
@@ -2083,11 +2135,15 @@ ${extra}
         setDownloading(true);
         setDownloadError("");
         try {
-          const text = activeTab === "기안문" ? draft : attach;
-          const filenameBase = hwpxFilenameFrom(text, activeTab);
-          await downloadAsHwpx(text, filenameBase);
+          if (activeTab === "엑셀") {
+            await downloadAsExcel(excel, "수서_선정목록");
+          } else {
+            const text = activeTab === "기안문" ? draft : attach;
+            const filenameBase = hwpxFilenameFrom(text, activeTab);
+            await downloadAsHwpx(text, filenameBase);
+          }
         } catch (e) {
-          setDownloadError(e.message || "hwpx 생성에 실패했습니다.");
+          setDownloadError(e.message || "파일 생성에 실패했습니다.");
         } finally {
           setDownloading(false);
         }
@@ -2113,9 +2169,12 @@ ${extra}
               ))}
               <button onClick={handleDownload} disabled={downloading}
                 style={{ marginLeft: "auto", marginRight: "10px", padding: "5px 10px", border: "1px solid var(--line-strong)", borderRadius: "6px", background: "white", color: "var(--chrome)", fontSize: "12px", fontWeight: "700", cursor: downloading ? "not-allowed" : "pointer", fontFamily: "inherit" }}
-              >{downloading ? "생성 중…" : "⬇ hwpx 다운로드"}</button>
+              >{downloading ? "생성 중…" : activeTab === "엑셀" ? "⬇ Excel 다운로드" : "⬇ hwpx 다운로드"}</button>
             </div>
             <div style={{ padding: "16px", background: "white" }}>
+              {activeTab === "엑셀" && excel
+                ? <MarkdownRenderer text={excel} />
+                : null}
               {activeTab === "기안문" && draft
                 ? <div style={{ fontFamily: "var(--font-mono)", fontSize: "13px", lineHeight: "2", whiteSpace: "pre-wrap", color: "var(--ink)" }}>{draft}</div>
                 : null}
@@ -3064,7 +3123,7 @@ ${extra}
                           })()}
                           {expandedStep === (plan.id + ":" + i) && step.result && (
                             <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: "1px solid var(--line-soft)", fontSize: "13.5px", lineHeight: "1.75", color: "var(--ink)" }}>
-                              {(step.result.includes("===기안문시작===") || step.result.includes("===첨부시작==="))
+                              {(step.result.includes("===기안문시작===") || step.result.includes("===첨부시작===") || step.result.includes("===엑셀시작==="))
                                 ? <TabbedDocument content={step.result} />
                                 : <MarkdownRenderer text={step.result} />}
                             </div>
@@ -3323,7 +3382,7 @@ ${extra}
                         <div key={i} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
                           <span className="code-chip" style={{ flexShrink: 0, marginTop: "3px" }}>{agentCode}</span>
                           <div style={{ flex: 1, fontSize: "14px", lineHeight: "1.75", color: "var(--ink)", minWidth: 0 }}>
-                            {(msg.content.includes("===기안문시작===") || msg.content.includes("===첨부시작==="))
+                            {(msg.content.includes("===기안문시작===") || msg.content.includes("===첨부시작===") || msg.content.includes("===엑셀시작==="))
                               ? <TabbedDocument content={msg.content} />
                               : <MarkdownRenderer text={msg.content} />}
                           </div>
