@@ -2352,7 +2352,10 @@ ${extra}
       const callApi = async (prompt, msgs) => {
         const isPrRequest = prompt.startsWith(PR_SYSTEM_PROMPT);
         const isB01Request = prompt.startsWith(B01_SYSTEM_PROMPT);
-        if (isB01Request) return requestB01SearchApi(prompt, msgs);
+        // 2026-07-10: OpenRouter native 웹서치(google/gemini-3.5-flash) 테스트 결과 검색당 12회 반복 호출로
+        // prompt_tokens 4.4만·턴당 $0.26까지 치솟고 응답이 30초 타임아웃에 가깝게 걸려 다이렉트 Gemini API로 롤백.
+        // requestB01SearchApi는 향후 재검토용으로 남겨둠(현재 미사용).
+        if (isB01Request) return requestGeminiApi(prompt, msgs);
         const apiMessages = [
           { role: "system", content: prompt },
           ...msgs.map(m => ({ role: m.role, content: m.content })),
