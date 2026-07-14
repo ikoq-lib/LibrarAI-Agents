@@ -130,6 +130,12 @@
       ? "https://librar-ai-agents.vercel.app/api/naver-books"
       : "/api/naver-books";
 
+    // B-01 전용 — 국립중앙도서관 서지정보유통지원시스템(SEOJI) API 프록시.
+    // 네이버 책 검색 결과에 정가 정보가 없어 "절판 의심"으로 플래그된 후보를 ISBN으로 재조회해 확인한다.
+    const SEOJI_API_URL = window.location.protocol === "file:"
+      ? "https://librar-ai-agents.vercel.app/api/seoji"
+      : "/api/seoji";
+
     // B-03 전용 — Supabase public.books 실제 조회 프록시(복본 판정)
     const BOOKS_API_URL = window.location.protocol === "file:"
       ? "https://librar-ai-agents.vercel.app/api/books"
@@ -3456,16 +3462,47 @@ ${extra}
             // 특정 키워드 실패는 건너뛰고 나머지 결과로 계속 진행
           }
         }));
-        return candidates;
+        return await verifyB01SuspectedOutOfPrint(candidates);
+      };
+
+      // 네이버 책 검색 결과에 정가(price/discount)가 둘 다 없는 후보는 "절판 의심"으로 남는다.
+      // 알라딘의 stockStatus 같은 재고 필드가 네이버에는 없어, 대신 SEOJI(국립중앙도서관 서지정보)를
+      // ISBN으로 재조회해 정가(PRE_PRICE) 확인이 되는지로 절판 의심을 보강 판정한다.
+      // 대상은 절판 의심 후보로 한정해 호출량을 제어한다(전체 후보를 SEOJI로 재조회하지 않음).
+      const verifyB01SuspectedOutOfPrint = async (candidates) => {
+        const suspects = candidates.filter(c => !c.price);
+        if (!suspects.length) return candidates;
+        const verified = await Promise.all(suspects.map(async (c) => {
+          try {
+            const res = await fetch(SEOJI_API_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ isbn: c.isbn, pageSize: 1 }),
+            });
+            const data = await res.json();
+            const doc = data.docs && data.docs[0];
+            if (doc && doc.PRE_PRICE) {
+              return { ...c, price: doc.PRE_PRICE, seojiChecked: true };
+            }
+            return { ...c, seojiChecked: true, seojiOutOfPrintSuspect: true };
+          } catch (e) {
+            return c; // SEOJI 조회 실패 시 기존 절판 의심 상태 그대로 유지
+          }
+        }));
+        const byIsbn = new Map(verified.map(c => [c.isbn, c]));
+        return candidates.map(c => byIsbn.get(c.isbn) || c);
       };
 
       // 수집된 후보를 B-01에게 보낼 텍스트 블록으로 직렬화
       const formatB01NaverBlock = (candidates) => {
         if (!candidates.length) return "\n\n[네이버 책 검색 수집 결과]\n(수집된 후보 없음 — 검색 키워드를 조정하거나 SEOJI로 직접 확인이 필요합니다.)";
-        const lines = candidates.map(c =>
-          `- ${c.title} | 저자: ${c.author || "미상"} | 출판사: ${c.publisher} | 출간일: ${c.pubdate} | 정가: ${c.price || "확인필요"}원 | ISBN: ${c.isbn} | 분야키워드: ${c.kdcHint}`
-        );
-        return `\n\n[네이버 책 검색 수집 결과 — 총 ${candidates.length}건]\n${lines.join("\n")}`;
+        const lines = candidates.map(c => {
+          const priceLabel = c.price
+            ? `${c.price}원`
+            : c.seojiOutOfPrintSuspect ? "확인불가(SEOJI 재조회에도 정가 없음 — 절판 의심)" : "확인필요";
+          return `- ${c.title} | 저자: ${c.author || "미상"} | 출판사: ${c.publisher} | 출간일: ${c.pubdate} | 정가: ${priceLabel} | ISBN: ${c.isbn} | 분야키워드: ${c.kdcHint}`;
+        });
+        return `\n\n[네이버 책 검색 수집 결과 — 총 ${candidates.length}건, SEOJI 절판 의심 재확인 포함]\n${lines.join("\n")}`;
       };
 
       const callApi = async (prompt, msgs) => {
