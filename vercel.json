@@ -3,8 +3,10 @@
     { "source": "/", "destination": "/LibrarAI.html" }
   ],
   "functions": {
-    "api/chat.js": { "maxDuration": 30 },
+    "api/chat.js": { "maxDuration": 60 },
     "api/gemini.js": { "maxDuration": 120 },
-    "api/naver-books.js": { "maxDuration": 30 }
+    "api/naver-books.js": { "maxDuration": 30 },
+    "api/books.js": { "maxDuration": 30 },
+    "api/budget.js": { "maxDuration": 15 }
   }
 }
