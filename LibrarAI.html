@@ -82,6 +82,11 @@
       0%, 60%, 100% { transform: translateY(0); }
       30% { transform: translateY(-6px); }
     }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    .stream-cursor { display: inline-block; animation: blink 0.9s step-start infinite; color: var(--accent); }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
@@ -3136,8 +3141,20 @@ ${extra}
       // ── Message states ──
       // 탭별 대화(bAgentMsgs 및 아래 named 상태들)를 새로고침 후에도 이어갈 수 있도록,
       // 마운트 시 1회만 localStorage에서 읽어 각 상태의 초기값으로 사용한다.
+      // 새로고침 시점에 스트리밍 중이던 말풍선이 있었다면 streaming 플래그가 그대로 저장돼 있을 수 있다 —
+      // 살려둘 프로세스가 없으니 커서가 영영 깜빡이지 않도록 불러올 때 전부 꺼둔다.
+      const clearStreamingFlags = (msgs) => Array.isArray(msgs) ? msgs.map(m => m.streaming ? { ...m, streaming: false } : m) : msgs;
       const [savedTabState] = useState(() => {
-        try { return JSON.parse(localStorage.getItem("librarai_tab_state")) || {}; } catch { return {}; }
+        try {
+          const parsed = JSON.parse(localStorage.getItem("librarai_tab_state")) || {};
+          if (parsed.bAgentMsgs) {
+            parsed.bAgentMsgs = Object.fromEntries(Object.entries(parsed.bAgentMsgs).map(([k, v]) => [k, clearStreamingFlags(v)]));
+          }
+          ["plannerMsgs", "clubMsgs", "llPlannerMsgs", "llRecruiterMsgs", "llStudentRecruiterMsgs", "llOperationLogMsgs", "llResultReporterMsgs", "d03Msgs", "d06Msgs"].forEach(key => {
+            if (parsed[key]) parsed[key] = clearStreamingFlags(parsed[key]);
+          });
+          return parsed;
+        } catch { return {}; }
       });
       const [plannerMsgs, setPlannerMsgs]       = useState(savedTabState.plannerMsgs || [{ role: "assistant", content: PLANNER_INIT }]);
       const [clubMsgs, setClubMsgs]             = useState(savedTabState.clubMsgs || [{ role: "assistant", content: CLUB_INIT }]);
@@ -3296,6 +3313,39 @@ ${extra}
         } catch (e) {
           throw new Error("서버에 연결할 수 없습니다. 네트워크를 확인해주세요.");
         }
+        const contentType = res.headers.get("content-type") || "";
+
+        // 스트리밍 응답 — SSE 청크를 누적하며 overrides.onChunk로 실시간 진행 상황을 전달한다.
+        if (contentType.includes("text/event-stream") && res.body) {
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let accumulated = "";
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop(); // 마지막 줄은 다음 청크와 이어질 수 있으니 남겨둔다
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith("data:")) continue;
+              const payload = trimmed.slice(5).trim();
+              if (!payload || payload === "[DONE]") continue;
+              let json;
+              try { json = JSON.parse(payload); } catch { continue; } // 청크 경계에 걸친 불완전한 조각은 건너뜀
+              if (json.error) throw new Error(typeof json.error === "string" ? json.error : (json.error.message || JSON.stringify(json.error)));
+              const delta = json.choices?.[0]?.delta?.content;
+              if (delta) {
+                accumulated += delta;
+                if (overrides.onChunk) overrides.onChunk(accumulated);
+              }
+            }
+          }
+          return accumulated || "응답을 가져오지 못했습니다.";
+        }
+
+        // 스트리밍이 아닌 응답(주로 요청 자체가 거부된 에러) — 기존 방식대로 처리
         const rawText = await res.text();
         if (!rawText || !rawText.trim()) {
           if (res.status === 404) throw new Error("채팅 API 엔드포인트를 찾을 수 없습니다. Vercel 배포 상태를 확인해주세요.");
@@ -3505,7 +3555,7 @@ ${extra}
         return `\n\n[네이버 책 검색 수집 결과 — 총 ${candidates.length}건, SEOJI 절판 의심 재확인 포함]\n${lines.join("\n")}`;
       };
 
-      const callApi = async (prompt, msgs) => {
+      const callApi = async (prompt, msgs, onChunk) => {
         const isPrRequest = prompt.startsWith(PR_SYSTEM_PROMPT);
         const isB01Request = prompt.startsWith(B01_SYSTEM_PROMPT);
         // 2026-07-10: OpenRouter native 웹서치(google/gemini-3.5-flash) 테스트 결과 검색당 12회 반복 호출로
@@ -3516,16 +3566,45 @@ ${extra}
           { role: "system", content: prompt },
           ...msgs.map(m => ({ role: m.role, content: m.content })),
         ];
-        let reply = await requestApi(apiMessages, isPrRequest ? 0.2 : 0.7);
+        let reply = await requestApi(apiMessages, isPrRequest ? 0.2 : 0.7, { onChunk });
         const hasBrokenKorean = /[㐀-䶿一-鿿豈-﫿�]/.test(reply);
         if (isPrRequest && hasBrokenKorean) {
           reply = await requestApi([
             ...apiMessages,
             { role: "assistant", content: reply },
             { role: "user", content: "위 답변의 내용과 형식은 유지하되, 섞여 있는 한자·중국어·일본어 문자와 깨진 글자를 모두 자연스러운 현대 한국어 한글로 고쳐주세요. 설명 없이 교정된 전체 최종본만 출력하세요." },
-          ], 0);
+          ], 0, { onChunk });
         }
         return reply;
+      };
+
+      // 스트리밍 청크로 마지막 말풍선을 점진적으로 갱신하는 헬퍼.
+      // 최초 청크에서 새 말풍선을 추가(streaming: true로 표시 — 렌더링 쪽에서 깜빡이는 커서를 붙임)하고,
+      // 이후 청크는 그 말풍선 내용만 교체한다. finalize(content)로 streaming 플래그를 내려 커서를 없애고
+      // 최종본으로 마무리한다(에러 시에도 같은 말풍선을 에러 메시지로 교체해 중복 말풍선이 남지 않게 한다).
+      const makeStreamHandler = (applyUpdate, extra = {}) => {
+        let started = false;
+        const onChunk = (accumulated) => {
+          if (!started) {
+            started = true;
+            applyUpdate(prev => [...prev, { role: "assistant", content: accumulated, streaming: true, ...extra }]);
+          } else {
+            applyUpdate(prev => {
+              const next = [...prev];
+              next[next.length - 1] = { ...next[next.length - 1], content: accumulated, streaming: true };
+              return next;
+            });
+          }
+        };
+        const finalize = (content) => {
+          applyUpdate(prev => {
+            if (!started) return [...prev, { role: "assistant", content, ...extra }];
+            const next = [...prev];
+            next[next.length - 1] = { ...next[next.length - 1], content, streaming: false };
+            return next;
+          });
+        };
+        return { onChunk, finalize };
       };
 
       // 총괄 지시 단계의 최초 사용자 메시지 구성 — 러너 첫 실행 및 replyToStep의 구버전 데이터 복구에서 공용
@@ -3747,6 +3826,7 @@ ${extra}
         const newMsgs = [...currentMsgs, { role: "user", content: userText }];
         setter(newMsgs);
         setLoading(true);
+        let stream = null;
         try {
           const pausedChain = isDmTab ? dmChains[tab] : null;
           if (pausedChain) {
@@ -3767,13 +3847,14 @@ ${extra}
                 apiMsgs = newMsgs.slice(0, -1).concat({ role: "user", content: userText + formatB01NaverBlock(candidates) });
               }
             }
-            const reply = await callApi(prompt, apiMsgs);
+            stream = makeStreamHandler(setter);
+            const reply = await callApi(prompt, apiMsgs, stream.onChunk);
             if (isDmTab) {
               // DM 자신의 응답에 리프 위임(ROUTE) 블록이 있으면, 리프에게 위임했다는 설명만 보여주고 끝내지 않고
               // 즉시 해당 리프를 실행해 실제 산출물까지 이어간다.
               const route = parseRouteBlock(reply);
               const displayReply = route ? stripRouteBlock(reply) : reply;
-              setter(prev => [...prev, { role: "assistant", content: displayReply }]);
+              stream.finalize(displayReply);
               if (route) {
                 await runDmChain(tab, { targets: route.targets, idx: 0, note: route.note, originalInstruction: userText, leafMessages: [], prevReply: null, prevTargetId: null });
               }
@@ -3789,18 +3870,19 @@ ${extra}
                 followUpContent = `[DB 조회 실패: ${e.message}]`;
               }
               const finalReply = await callApi(prompt, [...apiMsgs, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
-              setter(prev => [...prev, { role: "assistant", content: finalReply }]);
+              stream.finalize(finalReply);
             } else if (tab === "a03-budget-management" && parseBudgetQueryBlock(reply)) {
               // A-03이 잔액 조회·매칭·집행 전 실제 예산 DB 조회/기록을 요청했다면(===BUDGET_QUERY===),
               // 화면에는 보여주지 않고 api/budget.js를 왕복 호출해(조회 → 매칭 확인 → 집행) 최종 답변을 받는다.
               const finalReply = await resolveBudgetReply(prompt, apiMsgs, reply);
-              setter(prev => [...prev, { role: "assistant", content: finalReply }]);
+              stream.finalize(finalReply);
             } else {
-              setter(prev => [...prev, { role: "assistant", content: reply }]);
+              stream.finalize(reply);
             }
           }
         } catch (err) {
-          setter(prev => [...prev, { role: "assistant", content: "오류가 발생했습니다.\n\n" + err.message }]);
+          if (stream) stream.finalize("오류가 발생했습니다.\n\n" + err.message);
+          else setter(prev => [...prev, { role: "assistant", content: "오류가 발생했습니다.\n\n" + err.message }]);
         }
         setTabActivity(prev => ({ ...prev, [tab]: new Date().toISOString() }));
         setLoading(false);
@@ -4643,9 +4725,11 @@ ${extra}
                           {/* DM 탭이 위임 리프를 순차 실행할 때, 그 리프 턴은 msg.agentId로 자기 코드(예: B-01)를 표시한다 */}
                           <span className="code-chip" style={{ flexShrink: 0, marginTop: "3px" }}>{msg.agentId ? codeFor(msg.agentId) : agentCode}</span>
                           <div style={{ flex: 1, fontSize: "14px", lineHeight: "1.75", color: "var(--ink)", minWidth: 0 }}>
-                            {(msg.content.includes("===기안문시작===") || msg.content.includes("===첨부시작===") || msg.content.includes("===엑셀시작==="))
-                              ? <TabbedDocument content={msg.content} />
-                              : <MarkdownRenderer text={msg.content} />}
+                            {msg.streaming
+                              ? <><MarkdownRenderer text={msg.content} /><span className="stream-cursor">▊</span></>
+                              : (msg.content.includes("===기안문시작===") || msg.content.includes("===첨부시작===") || msg.content.includes("===엑셀시작==="))
+                                ? <TabbedDocument content={msg.content} />
+                                : <MarkdownRenderer text={msg.content} />}
                           </div>
                         </div>
                       )
