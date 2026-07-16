@@ -3058,13 +3058,118 @@ ${extra}
     const hwpxParaEmpty = (pid) =>
       `<hp:p id="${pid}" paraPrIDRef="7" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="5"><hp:t/></hp:run></hp:p>`;
 
+    // segments: [text, charPr][] — 한 문단(hp:p) 안에 여러 hp:run을 넣어 인라인 **볼드**를 표현한다.
+    const hwpxParaMultiRun = (pid, segments, paraPr = 7, style = 0) => {
+      const runs = segments.map(([text, charPr]) => `<hp:run charPrIDRef="${charPr}"><hp:t>${escapeHwpxText(text)}</hp:t></hp:run>`).join("");
+      return `<hp:p id="${pid}" paraPrIDRef="${paraPr}" styleIDRef="${style}" pageBreak="0" columnBreak="0" merged="0">${runs}</hp:p>`;
+    };
+
+    // hwpx_base_template.js의 header.xml에 추가된 붙임 서식용 커스텀 스타일 ID.
+    // (기존 본문 스타일 paraPr=7/style=0/charPr=5는 그대로 두고 끝에만 추가했다 — HWPX_STYLES.md 없음, 아래가 유일한 참조표)
+    //   charPr  44=제목용 굵게 15pt / 45=소제목용 굵게 12pt / 46=인라인 볼드·표 헤더용 굵게 10pt
+    //   paraPr  52=제목 문단(좌측정렬+상단여백) / 53=소제목 문단 / 54=목록(들여쓰기) / 55=표 헤더 셀(가운데정렬) / 56=표 본문 셀(좌측정렬)
+    //   borderFill 33=표 테두리(가는 실선 4방향)
+    const HWPX_INLINE_BOLD_RE = /\*\*([^*]+)\*\*/g;
+    const splitInlineBold = (text, normalCharPr, boldCharPr) => {
+      const segments = [];
+      let lastIndex = 0;
+      let m;
+      HWPX_INLINE_BOLD_RE.lastIndex = 0;
+      while ((m = HWPX_INLINE_BOLD_RE.exec(text)) !== null) {
+        if (m.index > lastIndex) segments.push([text.slice(lastIndex, m.index), normalCharPr]);
+        segments.push([m[1], boldCharPr]);
+        lastIndex = HWPX_INLINE_BOLD_RE.lastIndex;
+      }
+      if (lastIndex < text.length) segments.push([text.slice(lastIndex), normalCharPr]);
+      return segments.length ? segments : [[text, normalCharPr]];
+    };
+
+    const HWPX_TABLE_ROW_RE = /^\s*\|(.+)\|\s*$/;
+    const HWPX_TABLE_SEP_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/;
+    const HWPX_HEADING_RE = /^(#{1,3})\s+(.+)$/;
+    const HWPX_BULLET_RE = /^\s*[-*]\s+(.+)$/;
+    const HWPX_TABLE_USABLE_WIDTH = 48190; // 페이지폭 59528 - 좌우여백 5669*2 (secPr 기준)
+    const HWPX_TABLE_ROW_HEIGHT = 620;
+
+    let _hwpxTblIdSeq = 1000000000;
+    const nextHwpxTblId = () => ++_hwpxTblIdSeq;
+
+    // 마크다운 표(| ... | 행 + |---|---| 구분선)를 실제 hwpx 표(hp:tbl)로 변환한다.
+    // 첫 행은 표 헤더(가운데정렬+굵게), 나머지는 본문 셀(좌측정렬)로 렌더링한다.
+    const buildHwpxTable = (rows, nextId) => {
+      const colCnt = rows[0].length;
+      const rowCnt = rows.length;
+      const colWidth = Math.floor(HWPX_TABLE_USABLE_WIDTH / colCnt);
+      const trs = rows.map((row, r) => {
+        const tcs = row.map((cellText, c) => {
+          const isHeader = r === 0;
+          const cellP = hwpxPara(nextId(), cellText, isHeader ? 55 : 56, 0, isHeader ? 46 : 5);
+          return `<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="33">`
+            + `<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${cellP}</hp:subList>`
+            + `<hp:cellAddr colAddr="${c}" rowAddr="${r}"/><hp:cellSpan colSpan="1" rowSpan="1"/>`
+            + `<hp:cellSz width="${colWidth}" height="${HWPX_TABLE_ROW_HEIGHT}"/>`
+            + `<hp:cellMargin left="141" right="141" top="141" bottom="141"/></hp:tc>`;
+        }).join("");
+        return `<hp:tr>${tcs}</hp:tr>`;
+      }).join("");
+      const tbl = `<hp:tbl id="${nextHwpxTblId()}" zOrder="1" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" rowCnt="${rowCnt}" colCnt="${colCnt}" cellSpacing="0" borderFillIDRef="33" noAdjust="0">`
+        + `<hp:sz width="${HWPX_TABLE_USABLE_WIDTH}" widthRelTo="ABSOLUTE" height="${HWPX_TABLE_ROW_HEIGHT * rowCnt}" heightRelTo="ABSOLUTE" protect="0"/>`
+        + `<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
+        + `<hp:outMargin left="0" right="0" top="141" bottom="141"/>`
+        + `<hp:inMargin left="141" right="141" top="141" bottom="141"/>`
+        + trs
+        + `</hp:tbl>`;
+      return `<hp:p id="${nextId()}" paraPrIDRef="7" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="5">${tbl}</hp:run></hp:p>`;
+    };
+
     // 문단 하나 = hp:p 하나(줄바꿈 단위). id=1은 secPr 전용 예약이라 본문은 2부터 시작한다.
+    // 간단한 마크다운(#/##/### 제목, **볼드**, -/* 목록, | 표 |)을 인식해 hwpx 서식(글자 크기·굵게·표)으로 변환한다.
     const buildHwpxSection0 = (bodyText) => {
       const lines = bodyText.replace(/\r\n/g, "\n").split("\n");
-      const paras = lines.map((line, i) => {
-        const pid = i + 2;
-        return line.trim() === "" ? hwpxParaEmpty(pid) : hwpxPara(pid, line);
-      });
+      let pid = 1;
+      const nextId = () => ++pid;
+      const paras = [];
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+        const rowMatch = HWPX_TABLE_ROW_RE.exec(line);
+        if (rowMatch && i + 1 < lines.length && HWPX_TABLE_SEP_RE.test(lines[i + 1])) {
+          const rows = [rowMatch[1].split("|").map(c => c.trim())];
+          let j = i + 2;
+          while (j < lines.length) {
+            const m2 = HWPX_TABLE_ROW_RE.exec(lines[j]);
+            if (!m2) break;
+            rows.push(m2[1].split("|").map(c => c.trim()));
+            j++;
+          }
+          paras.push(buildHwpxTable(rows, nextId));
+          i = j;
+          continue;
+        }
+        const headMatch = HWPX_HEADING_RE.exec(line);
+        if (headMatch) {
+          const level = headMatch[1].length;
+          const text = headMatch[2].trim();
+          paras.push(level <= 2 ? hwpxPara(nextId(), text, 52, 0, 44) : hwpxPara(nextId(), text, 53, 0, 45));
+          i++;
+          continue;
+        }
+        if (line.trim() === "") {
+          paras.push(hwpxParaEmpty(nextId()));
+          i++;
+          continue;
+        }
+        const bulletMatch = HWPX_BULLET_RE.exec(line);
+        if (bulletMatch) {
+          const segments = splitInlineBold("• " + bulletMatch[1].trim(), 5, 46);
+          paras.push(hwpxParaMultiRun(nextId(), segments, 54, 0));
+          i++;
+          continue;
+        }
+        const segments = splitInlineBold(line, 5, 46);
+        paras.push(hwpxParaMultiRun(nextId(), segments, 7, 0));
+        i++;
+      }
       return `<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hs:sec ${HWPX_NS}>${HWPX_SECPR}${paras.join("")}</hs:sec>`;
     };
 
