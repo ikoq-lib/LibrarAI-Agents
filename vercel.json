@@ -6,6 +6,7 @@
     "api/chat.js": { "maxDuration": 120 },
     "api/gemini.js": { "maxDuration": 120 },
     "api/naver-books.js": { "maxDuration": 30 },
+    "api/naver-shopping.js": { "maxDuration": 30 },
     "api/seoji.js": { "maxDuration": 30 },
     "api/books.js": { "maxDuration": 30 },
     "api/budget.js": { "maxDuration": 15 }

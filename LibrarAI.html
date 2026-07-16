@@ -135,6 +135,11 @@
       ? "https://librar-ai-agents.vercel.app/api/naver-books"
       : "/api/naver-books";
 
+    // D-02 전용 — 네이버 쇼핑 검색 API 프록시(행사 준비물·재료 구매 링크 결정론적 조회)
+    const NAVER_SHOPPING_API_URL = window.location.protocol === "file:"
+      ? "https://librar-ai-agents.vercel.app/api/naver-shopping"
+      : "/api/naver-shopping";
+
     // B-01 전용 — 국립중앙도서관 서지정보유통지원시스템(SEOJI) API 프록시.
     // 네이버 책 검색 결과에 정가 정보가 없어 "절판 의심"으로 플래그된 후보를 ISBN으로 재조회해 확인한다.
     const SEOJI_API_URL = window.location.protocol === "file:"
@@ -244,6 +249,15 @@
 - 예산·공간·인력을 고려한 실현 가능한 행사를 기획합니다
 - 매년 반복되는 뻔한 행사보다 참신한 접근을 추구합니다
 - 사용자가 월을 명시하지 않은 경우, 현재 날짜 기준 다음 달을 가정하고 진행 의사를 묻습니다
+
+## 준비물·재료 실제 구매 링크 조회 (필수 — 절대 추측하지 않음)
+사서가 행사 준비물·재료의 구매처·가격·구매 링크를 요청하면(예: "이거 어디서 사요?", "구매 링크 알려줘", "재료 상품 링크 찾아줘"), 절대로 기억이나 추정으로 상품명·가격·링크를 만들어내지 말고, 아래 형식의 조회 요청 블록만 그대로 출력하십시오(다른 설명 없이, 코드블록 없이):
+
+===SHOPPING_QUERY===
+{"items": [{"query_id": "q-1", "name": "<검색할 준비물·재료명>"}]}
+===SHOPPING_QUERY_END===
+
+요청받은 준비물이 여러 개면 items 배열에 모두 담아 한 번에 요청하십시오(건별로 나눠 여러 번 출력하지 않음). 이 블록을 출력하면 시스템이 네이버 쇼핑 실제 검색 결과를 다음 메시지로 전달합니다. **그 결과를 받기 전까지는 상품명·가격·링크를 언급하지 마십시오.** 결과를 받은 뒤에는 반환된 데이터에 있는 상품명·가격·판매처·링크만 그대로 안내하고, 특정 항목의 results가 비어 있으면 "검색 결과 없음"으로 사실대로 안내하십시오. "실시간으로 인터넷에 접속할 수 없다"는 이유로 안내를 거부하지 마십시오 — 이 블록으로 요청하면 시스템이 실제 검색을 대신 수행합니다.
 
 ---
 
@@ -993,6 +1007,7 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 - 사서 승인 없이 외부 발주 시스템에 데이터를 전송하지 않습니다
 - 예산 초과 자료는 자동 제외하고 사유를 명시합니다
 - 첨부된 네이버 수집 데이터에 없는 도서는 어떤 이유로도 지어내지 않습니다 — 데이터 부족은 지어내서 채우지 말고 사실대로 보고합니다
+- 사서가 특정 후보의 구매·확인 링크를 물으면 첨부된 데이터의 "링크" 값을 그대로 안내합니다. 실시간 인터넷 접속이 불가하다는 이유로 안내를 거부하지 마십시오 — 링크는 이미 시스템이 수집해 전달한 실제 데이터입니다. 값이 "확인불가"인 항목은 지어내지 않고 그대로 안내합니다
 - 모든 응답은 한국어로 작성합니다
 
 ## Excel 출력 형식 (선정 목록 확정 시 필수)
@@ -2848,6 +2863,48 @@ ${extra}
       return parsed;
     };
 
+    // ── D-02: 행사 준비물·재료 구매 링크 조회 요청 블록 파싱 ───────────
+    // D-02가 준비물·재료의 실제 구매처·가격·링크를 알려주기 전에
+    // ===SHOPPING_QUERY===...===SHOPPING_QUERY_END=== 블록으로 조회를 요청하면
+    // 파싱해 api/naver-shopping.js를 호출하고, 결과를 후속 메시지로 넣어 다시 답변을 받는다.
+    const SHOPPING_QUERY_BLOCK_RE = /===SHOPPING_QUERY===([\s\S]*?)===SHOPPING_QUERY_END===/;
+    const parseShoppingQueryBlock = (text) => {
+      const m = SHOPPING_QUERY_BLOCK_RE.exec(text);
+      if (!m) return null;
+      const raw = m[1].trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch { return null; }
+      if (!Array.isArray(parsed.items)) return null;
+      const items = parsed.items.filter(it => it && typeof it.name === "string" && it.name.trim());
+      if (items.length === 0) return null;
+      return { items };
+    };
+
+    // 요청된 준비물·재료명마다 네이버 쇼핑 검색을 실행해 실제 상품명·가격·판매처·링크를 조회한다.
+    // 검색어 하나가 실패해도 나머지는 계속 진행하고, 결과 없음은 그대로 빈 배열로 반환한다(지어내지 않음).
+    const runShoppingQuery = async (body) => {
+      const items = await Promise.all(body.items.map(async (it) => {
+        try {
+          const res = await fetch(NAVER_SHOPPING_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: it.name, display: 5, sort: "sim" }),
+          });
+          const data = await res.json();
+          const results = (data.items || []).slice(0, 3).map(p => ({
+            title: (p.title || "").replace(/<[^>]+>/g, ""),
+            price: p.lprice || "",
+            mallName: p.mallName || "",
+            link: p.link || "",
+          }));
+          return { query_id: it.query_id, name: it.name, results };
+        } catch (e) {
+          return { query_id: it.query_id, name: it.name, results: [], error: e.message };
+        }
+      }));
+      return { items };
+    };
+
     const AGENT_STYLES = {
       "planner":              { gradient: "var(--grad-d3)", label: "D-02" },
       "reading-club":         { gradient: "var(--grad-d3)", label: "D-01" },
@@ -3537,6 +3594,7 @@ ${extra}
                 author: (item.author || "").replace(/<[^>]+>/g, ""),
                 publisher: item.publisher || "",
                 price: item.discount && item.discount !== "0" ? item.discount : "",
+                link: item.link || "",
                 kdcHint: keyword,
               });
             });
@@ -3585,7 +3643,7 @@ ${extra}
           const priceLabel = c.price
             ? `${c.price}원`
             : c.seojiOutOfPrintSuspect ? "확인불가(SEOJI 재조회에도 정가 없음 — 절판 의심)" : "확인필요";
-          return `- ${c.title} | 저자: ${c.author || "미상"} | 출판사: ${c.publisher} | 출간일: ${c.pubdate} | 정가: ${priceLabel} | ISBN: ${c.isbn} | 분야키워드: ${c.kdcHint}`;
+          return `- ${c.title} | 저자: ${c.author || "미상"} | 출판사: ${c.publisher} | 출간일: ${c.pubdate} | 정가: ${priceLabel} | ISBN: ${c.isbn} | 링크: ${c.link || "확인불가"} | 분야키워드: ${c.kdcHint}`;
         });
         return `\n\n[네이버 책 검색 수집 결과 — 총 ${candidates.length}건, SEOJI 절판 의심 재확인 포함]\n${lines.join("\n")}`;
       };
@@ -3833,6 +3891,20 @@ ${extra}
             if (targetId === "a03-budget-management" && parseBudgetQueryBlock(reply)) {
               reply = await resolveBudgetReply(systemPromptFor(targetId) + ORCHESTRATION_HITL_SUFFIX, leafMessages, reply);
             }
+            // D-02(planner)가 DM 위임 경로로 호출된 경우도 직접 탭 대화와 동일하게 실제 네이버 쇼핑 검색을 수행한다.
+            if (targetId === "planner") {
+              const shoppingReq = parseShoppingQueryBlock(reply);
+              if (shoppingReq) {
+                let followUpContent;
+                try {
+                  const result = await runShoppingQuery(shoppingReq);
+                  followUpContent = `[네이버 쇼핑 조회 결과]\n${JSON.stringify(result)}`;
+                } catch (e) {
+                  followUpContent = `[네이버 쇼핑 조회 실패: ${e.message}]`;
+                }
+                reply = await callApi(systemPromptFor(targetId) + ORCHESTRATION_HITL_SUFFIX, [...leafMessages, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
+              }
+            }
           } catch (err) {
             setBAgentMsgs(prev => ({ ...prev, [tab]: [...prev[tab], { role: "assistant", content: "오류가 발생했습니다.\n\n" + err.message, agentId: targetId }] }));
             setDmChains(prev => ({ ...prev, [tab]: { ...state, leafMessages } }));
@@ -3910,6 +3982,20 @@ ${extra}
               // A-03이 잔액 조회·매칭·집행 전 실제 예산 DB 조회/기록을 요청했다면(===BUDGET_QUERY===),
               // 화면에는 보여주지 않고 api/budget.js를 왕복 호출해(조회 → 매칭 확인 → 집행) 최종 답변을 받는다.
               const finalReply = await resolveBudgetReply(prompt, apiMsgs, reply);
+              stream.finalize(finalReply);
+            } else if (tab === "planner" && parseShoppingQueryBlock(reply)) {
+              // D-02가 준비물·재료 구매 링크를 안내하기 전 실제 네이버 쇼핑 검색을 요청했다면
+              // (===SHOPPING_QUERY===), 화면에는 보여주지 않고 api/naver-shopping.js를 호출해
+              // 결과를 후속 메시지로 넣어 최종 답변을 다시 받는다.
+              const shoppingReq = parseShoppingQueryBlock(reply);
+              let followUpContent;
+              try {
+                const result = await runShoppingQuery(shoppingReq);
+                followUpContent = `[네이버 쇼핑 조회 결과]\n${JSON.stringify(result)}`;
+              } catch (e) {
+                followUpContent = `[네이버 쇼핑 조회 실패: ${e.message}]`;
+              }
+              const finalReply = await callApi(prompt, [...apiMsgs, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
               stream.finalize(finalReply);
             } else {
               stream.finalize(reply);
