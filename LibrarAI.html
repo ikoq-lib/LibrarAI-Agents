@@ -130,7 +130,7 @@
       ? "https://librar-ai-agents.vercel.app/api/gemini"
       : "/api/gemini";
 
-    // B-01 전용 — 네이버 책 검색 API 프록시(FN-01 신간 후보 결정론적 수집)
+    // B-01 전용 — 네이버 책 검색 API 프록시(SEOJI 1차 수집 후보의 정가·표지·링크 2차 보완용)
     const NAVER_BOOKS_API_URL = window.location.protocol === "file:"
       ? "https://librar-ai-agents.vercel.app/api/naver-books"
       : "/api/naver-books";
@@ -140,8 +140,8 @@
       ? "https://librar-ai-agents.vercel.app/api/naver-shopping"
       : "/api/naver-shopping";
 
-    // B-01 전용 — 국립중앙도서관 서지정보유통지원시스템(SEOJI) API 프록시.
-    // 네이버 책 검색 결과에 정가 정보가 없어 "절판 의심"으로 플래그된 후보를 ISBN으로 재조회해 확인한다.
+    // B-01/B-02 전용 — 국립중앙도서관 서지정보유통지원시스템(SEOJI) API 프록시.
+    // B-01: 신간 후보 1차 수집원(전자책 제외·종이책·제본형태 필터). B-02: 이용자 희망도서 신청 건의 포맷 자동 검증.
     const SEOJI_API_URL = window.location.protocol === "file:"
       ? "https://librar-ai-agents.vercel.app/api/seoji"
       : "/api/seoji";
@@ -156,8 +156,9 @@
       ? "https://librar-ai-agents.vercel.app/api/budget"
       : "/api/budget";
 
-    // KDC 대분류를 대략 커버하는 검색 키워드 — 네이버 책 검색은 query 필수라 분야별로 나눠 호출한다
-    const B01_NAVER_KEYWORDS = ["소설", "에세이", "인문학 신간", "경제경영 신간", "자기계발 신간", "역사 신간", "과학 신간", "어린이 신간"];
+    // B-01/B-02 공통 — SEOJI 수집·검증 시 허용하는 제본 형태(FORM_DETAIL). 이 목록에 없는 형태(중철제본·스프링제본·
+    // 지도·기타 등)는 후보에서 제외한다. 2026-07-18 사서 지시: 전자책 제외(EBOOK_YN=N) + 종이책(FORM)만 수집.
+    const B01_ALLOWED_FORM_DETAILS = ["무선제본", "양장본", "보드북"];
 
     // OpenRouter 경유 고정 모델 (배포 시 다이렉트 API로 전환 예정)
     const DEFAULT_CHAT_MODEL = "anthropic/claude-sonnet-5";
@@ -983,12 +984,12 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 - 모든 문장은 현대 한국어 한글로 작성하고, 한자·중국어·일본어 문자를 섞지 않습니다`;
 
     // ── B-01~B-06 (D1 장서 도메인) System Prompts ──────────────────
-    const B01_SYSTEM_PROMPT = `당신은 B-01 수서 에이전트입니다. 공공도서관 신간 도서 구입(수서) 업무를 전담하는 전문 에이전트입니다. 네이버 책 검색 API로 사전 수집된 신간 후보 목록(사용자 메시지에 함께 첨부됨)을 바탕으로 SEOJI 서지정보 보완, 점수화, 예산 배분, 문서 생성까지 전 과정을 지원하되 최종 선정은 항상 사서가 결정합니다. 알라딘 API는 2026-07-09부로 차단되어 더 이상 사용하지 않습니다.
+    const B01_SYSTEM_PROMPT = `당신은 B-01 수서 에이전트입니다. 공공도서관 신간 도서 구입(수서) 업무를 전담하는 전문 에이전트입니다. SEOJI(국립중앙도서관 서지정보유통지원시스템)로 사전 수집된 신간 후보 목록(사용자 메시지에 함께 첨부됨)을 바탕으로 점수화, 예산 배분, 문서 생성까지 전 과정을 지원하되 최종 선정은 항상 사서가 결정합니다. 알라딘 API는 2026-07-09부로 차단되어 더 이상 사용하지 않습니다.
 
 ## 담당 업무
-- FN-01 신간 후보 확인(1차: 네이버 책 검색 API 사전 수집 → 2차: SEOJI 보완): 신간 후보 수집은 시스템이 매 요청마다 자동으로 실행하는 B-01의 기본 동작입니다 — 사용자 메시지 끝에 "[네이버 책 검색 수집 결과]" 블록으로 KDC 분야별 후보(제목·저자·출판사·정가·출판일·ISBN)가 이미 첨부되어 전달되므로, 사서에게 "이미 작성한 목록이 있는지" 먼저 확인받거나 데이터 전달을 요청할 필요 없이 곧바로 이 데이터로 작업을 시작하세요. (다만 사서가 스스로 준비한 도서 목록을 메시지에 함께 제공하면 그 목록도 후보에 반영합니다.) 직접 검색을 수행하지 말고 이 데이터를 그대로 활용하세요. 데이터에 pubdate가 오늘보다 미래이거나 ISBN이 비어있는 항목(세트·묶음 상품 등 이상치)은 후보에서 제외하고 그 사유를 밝힙니다. 이후 각 후보를 SEOJI(국립중앙도서관 서지정보유통지원시스템)로 대조해 KDC 분류기호 등 네이버 검색으로 확인되지 않은 서지정보를 보완·확정합니다. SEOJI로도 KDC가 확인되지 않으면 임의로 확정하지 않고 사서에게 확인을 요청합니다.
-  - **절대 규칙(허구 도서 생성 금지)**: 후보 목록·선정 목록에 올리는 모든 도서(제목·저자·출판사·ISBN 등)는 반드시 첨부된 "[네이버 책 검색 수집 결과]" 블록에 실재하는 항목이어야 합니다. 이 블록에 없는 도서를 기억이나 추정으로 지어내 목록에 포함하는 것은 절대 금지입니다.
-  - 첨부된 블록이 "(수집된 후보 없음)"이거나 유효 후보가 부족한 경우, 절대로 도서를 임의로 만들어 채우지 말고 그 사실을 있는 그대로 보고한 뒤 사서에게 재수집(네트워크·API 상태 확인) 또는 추가 검색 키워드를 요청하세요. 목표 예산·건수를 채우지 못하더라도 실재하지 않는 항목으로 채우는 것보다 미달 상태를 보고하는 것이 항상 우선입니다.
+- FN-01 신간 후보 확인(1차: SEOJI 사전 수집 → 2차: 네이버 책 검색 API로 정가 보완): 신간 후보 수집은 시스템이 매 요청마다 자동으로 실행하는 B-01의 기본 동작입니다 — 사용자 메시지 끝에 "[SEOJI 신간 후보 수집 결과]" 블록으로 후보(제목·저자·출판사·정가·출판일·ISBN·제본형태)가 이미 첨부되어 전달되므로, 사서에게 "이미 작성한 목록이 있는지" 먼저 확인받거나 데이터 전달을 요청할 필요 없이 곧바로 이 데이터로 작업을 시작하세요. (다만 사서가 스스로 준비한 도서 목록을 메시지에 함께 제공하면 그 목록도 후보에 반영합니다.) 직접 검색을 수행하지 말고 이 데이터를 그대로 활용하세요. 2026-07-18부로 이 수집은 전자책 제외(EBOOK_YN=N)·종이책(FORM=종이책)·제본형태(무선제본/양장본/보드북)만 서버측에서 이미 필터링된 결과입니다 — 전자책이나 다른 제본형태 후보는 데이터에 아예 포함되지 않으므로 별도로 걸러낼 필요가 없습니다. 데이터에 ISBN이 비어있는 항목(세트·묶음 상품 등 이상치)은 후보에서 제외하고 그 사유를 밝힙니다. SEOJI는 KDC 분류기호를 제공하지 않으므로(2020년 이후 미제공) KDC 대분류는 사서 확인 없이 임의로 확정하지 마세요.
+  - **절대 규칙(허구 도서 생성 금지)**: 후보 목록·선정 목록에 올리는 모든 도서(제목·저자·출판사·ISBN 등)는 반드시 첨부된 "[SEOJI 신간 후보 수집 결과]" 블록에 실재하는 항목이어야 합니다. 이 블록에 없는 도서를 기억이나 추정으로 지어내 목록에 포함하는 것은 절대 금지입니다.
+  - 첨부된 블록이 "(수집된 후보 없음)"이거나 유효 후보가 부족한 경우, 절대로 도서를 임의로 만들어 채우지 말고 그 사실을 있는 그대로 보고한 뒤 사서에게 재수집(네트워크·API 상태 확인) 또는 사서가 직접 후보 추가를 요청하세요. 목표 예산·건수를 채우지 못하더라도 실재하지 않는 항목으로 채우는 것보다 미달 상태를 보고하는 것이 항상 우선입니다.
 - FN-02 복본·균형·희망도서 교차 확인: 후보를 B-03(복본 판정)·B-05(장서균형 결핍지수)에 위임하고 결과를 반영, 희망도서 요청과 교차해 우선순위 상향
 - FN-03 선정 기준 점수화: 이용자수요 40%(희망도서·유사도서 대출) + 사회적관심도 25%(베스트셀러 순위) + 장서균형 25%(B-05 결핍지수) + 출판시의성 10%
 - FN-04 예산 배분 초안: 점수 순 정렬, 희망도서는 상위 20% 이내 필수 포함, 단일 출판사 30%·동일 KDC 40% 초과 시 경고
@@ -1003,7 +1004,7 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 - 복본 판정(B-03)·결핍지수 계산(B-05)은 직접 수행하지 않고 위임 결과만 활용합니다
 - 사서 승인 없이 외부 발주 시스템에 데이터를 전송하지 않습니다
 - 예산 초과 자료는 자동 제외하고 사유를 명시합니다
-- 첨부된 네이버 수집 데이터에 없는 도서는 어떤 이유로도 지어내지 않습니다 — 데이터 부족은 지어내서 채우지 말고 사실대로 보고합니다
+- 첨부된 SEOJI 수집 데이터에 없는 도서는 어떤 이유로도 지어내지 않습니다 — 데이터 부족은 지어내서 채우지 말고 사실대로 보고합니다
 - 사서가 특정 후보의 구매·확인 링크를 물으면 첨부된 데이터의 "링크" 값을 그대로 안내합니다. 실시간 인터넷 접속이 불가하다는 이유로 안내를 거부하지 마십시오 — 링크는 이미 시스템이 수집해 전달한 실제 데이터입니다. 값이 "확인불가"인 항목은 지어내지 않고 그대로 안내합니다
 - 모든 응답은 한국어로 작성합니다
 
@@ -1027,13 +1028,22 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 
 ## 담당 업무
 - FN-01 신청 접수·목록화: 신청일·신청자·서명·저자·ISBN·사유 기록
-- FN-02 서지 정보 자동 보완: 알라딘 API로 ISBN 대조, 없으면 서명 검색으로 매칭. 매칭 실패 시 사서 수동 확인 요청
+- FN-02 서지 정보 자동 보완: 네이버 책 검색 API로 ISBN·서명 대조. 매칭 실패 시 사서 수동 확인 요청
 - FN-03 반려 기준 1차 판정 (R-01~R-10, 순서대로 적용해 첫 해당 사유로 반려):
-  R-01 소장/구입중(B-03 복본 판정 위임) · R-02 자격증·수험서 · R-03 절판 · R-04 외국서적·E-book·DVD·잡지 · R-05 출판 5년 초과 · R-06 만화·무협·판타지·로맨스(학습·우량만화 제외) · R-07 문제풀이집·색칠공부 · R-08 정가 5만원 이상 · R-09 전집·시리즈 월 3권 초과 · R-10 기타(사서 수동 판단)
+  R-01 소장/구입중(B-03 복본 판정 위임) · R-02 자격증·수험서 · R-03 절판 · R-04 외국서적·E-book·DVD·잡지·부적합 제본형태(SEOJI 포맷 조회로 자동 판정) · R-05 출판 5년 초과 · R-06 만화·무협·판타지·로맨스(학습·우량만화 제외) · R-07 문제풀이집·색칠공부 · R-08 정가 5만원 이상 · R-09 전집·시리즈 월 3권 초과 · R-10 기타(사서 수동 판단)
 - FN-04 신청 한도 검증: 1인 월 3권, 시리즈물 월 3권, 동일 도서 중복 신청 합산
 - FN-05 주간 처리 결과 보고 및 B-01 전달 (매주 화요일)
 - FN-06 이용자 안내 문구 초안 생성 (반려 건)
 - FN-07 월간 신청 현황 보고
+
+## R-04 포맷 자동 판정 (SEOJI 조회 — 필수, 절대 추측하지 않음)
+2026-07-18부로 R-04의 전자책·부적합 제본형태 여부는 추측하지 말고 SEOJI(국립중앙도서관 서지정보유통지원시스템) 조회로 판정합니다. 신청 건을 반려 기준 판정하기 전에, 아직 이번 대화에서 조회하지 않은 신청 건들의 ISBN(있으면 우선) 또는 서명을 모아 아래 형식의 조회 요청 블록만 그대로 출력하십시오(다른 설명 없이, 코드블록 없이):
+
+===SEOJI_FORMAT_QUERY===
+{"items": [{"query_id": "q-1", "isbn": "<ISBN, 없으면 생략>", "title": "<서명, ISBN 없을 때만>"}]}
+===SEOJI_FORMAT_QUERY_END===
+
+여러 건이면 items 배열에 모두 담아 한 번에 요청하십시오. 이 블록을 출력하면 시스템이 SEOJI 실제 조회 결과(ebookYn/form/formDetail 또는 found:false)를 다음 메시지로 전달합니다. **그 결과를 받기 전까지는 각 건의 전자책 여부·제본형태를 언급하거나 R-04를 판정하지 마십시오.** 결과를 받은 뒤: ebookYn이 "Y"이거나 form이 "종이책"이 아니면 R-04(전자책·비도서)로 반려. found:true이면서 formDetail이 "무선제본"·"양장본"·"보드북" 중 어느 것도 아니면(중철제본·스프링제본·지도·기타 등) R-04(부적합 제본형태)로 반려. found:false(SEOJI 미등록)이면 자동 판정하지 말고 MANUAL_REVIEW로 남겨 사서 확인을 요청하십시오. "실시간으로 인터넷에 접속할 수 없다"는 이유로 조회를 거부하지 마십시오 — 이 블록으로 요청하면 시스템이 실제 조회를 대신 수행합니다.
 
 ## 원칙
 - R-01(소장 여부)은 직접 판정하지 않고 B-03 복본 에이전트에 위임합니다 — B-03 응답 duplicate=반려확정 / needs_review=사서확인 전까지 보류 / new=다음 기준 진행
@@ -1173,7 +1183,7 @@ B-01은 신규 도서를 들이는 업무, B-06은 기존 소장 장서 현황 �
         name: "수서", sub: "B-01", icon: "📚",
         gradient: "var(--grad-d1)",
         systemPrompt: B01_SYSTEM_PROMPT,
-        init: "안녕하세요! B-01 수서 에이전트입니다.\n\n신간 도서 구입(수서) 업무를 도와드립니다. 네이버 책 검색 API로 KDC 분야별 신간을 1차 수집하고 SEOJI로 서지정보를 보완해 점수화, 예산 배분, Excel·기안문 생성까지 지원합니다.\n\n**주요 기능:**\n- FN-01: 신간 후보 수집\n- FN-02: 복본(B-03)·장서균형(B-05)·희망도서 교차 확인\n- FN-03: 선정 기준 점수화\n- FN-04: 예산 배분 초안\n- FN-05: Excel·기안문 생성\n\n**예시 요청:**\n- \"3분기 자료구입비 예산 120만원으로 신간 선정 초안을 만들어줘.\"\n- \"희망도서 신청 목록 35건, 잔여 예산 80만원으로 처리 가능한 것 선정해줘.\"",
+        init: "안녕하세요! B-01 수서 에이전트입니다.\n\n신간 도서 구입(수서) 업무를 도와드립니다. SEOJI로 신간을 1차 수집(전자책 제외·종이책·무선제본/양장본/보드북만)하고 네이버 책 검색 API로 정가를 보완해 점수화, 예산 배분, Excel·기안문 생성까지 지원합니다.\n\n**주요 기능:**\n- FN-01: 신간 후보 수집\n- FN-02: 복본(B-03)·장서균형(B-05)·희망도서 교차 확인\n- FN-03: 선정 기준 점수화\n- FN-04: 예산 배분 초안\n- FN-05: Excel·기안문 생성\n\n**예시 요청:**\n- \"3분기 자료구입비 예산 120만원으로 신간 선정 초안을 만들어줘.\"\n- \"희망도서 신청 목록 35건, 잔여 예산 80만원으로 처리 가능한 것 선정해줘.\"",
         placeholder: "예산·KDC 범위·수집 주기 등 수서 요청을 입력하세요... (Shift+Enter: 줄바꿈)",
         quickActions: [
           { label: "신간 후보 수집",   msg: "이번 분기 신간 후보를 수집해주세요. 예산과 KDC 범위를 알려주세요." },
@@ -2902,6 +2912,47 @@ ${extra}
       return { items };
     };
 
+    // ── B-02: 희망도서 신청 건 포맷(전자책 여부·제본형태) 조회 요청 블록 파싱 ──
+    // 2026-07-18 사서 지시: B-02는 R-04(포맷) 반려 기준을 SEOJI의 EBOOK_YN/FORM/FORM_DETAIL로
+    // 자동 판정한다. B-02가 ===SEOJI_FORMAT_QUERY===...===SEOJI_FORMAT_QUERY_END=== 블록으로
+    // 조회를 요청하면 파싱해 api/seoji.js를 호출하고, 결과를 후속 메시지로 넣어 다시 답변을 받는다.
+    const SEOJI_FORMAT_QUERY_BLOCK_RE = /===SEOJI_FORMAT_QUERY===([\s\S]*?)===SEOJI_FORMAT_QUERY_END===/;
+    const parseSeojiFormatQueryBlock = (text) => {
+      const m = SEOJI_FORMAT_QUERY_BLOCK_RE.exec(text);
+      if (!m) return null;
+      const raw = m[1].trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch { return null; }
+      if (!Array.isArray(parsed.items)) return null;
+      const items = parsed.items.filter(it => it && typeof it === "object" && (it.isbn || it.title));
+      if (items.length === 0) return null;
+      return { items };
+    };
+
+    // 신청 건마다 SEOJI를 ISBN(우선) 또는 서명으로 조회해 EBOOK_YN·FORM·FORM_DETAIL을 확인한다.
+    // 검색 결과가 없으면 자동 판정 불가로 명시하고(사서 수동 확인 필요), 지어내지 않는다.
+    const runB02SeojiFormatQuery = async (body) => {
+      const items = await Promise.all(body.items.map(async (it) => {
+        try {
+          const res = await fetch(SEOJI_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(it.isbn ? { isbn: it.isbn, pageSize: 1 } : { title: it.title, pageSize: 1 }),
+          });
+          const data = await res.json();
+          const doc = data.docs && data.docs[0];
+          if (!doc) return { query_id: it.query_id, isbn: it.isbn, title: it.title, found: false };
+          return {
+            query_id: it.query_id, isbn: it.isbn, title: it.title, found: true,
+            ebookYn: doc.EBOOK_YN || "", form: doc.FORM || "", formDetail: doc.FORM_DETAIL || "",
+          };
+        } catch (e) {
+          return { query_id: it.query_id, isbn: it.isbn, title: it.title, found: false, error: e.message };
+        }
+      }));
+      return { items };
+    };
+
     const AGENT_STYLES = {
       "planner":              { gradient: "var(--grad-d3)", label: "D-02" },
       "reading-club":         { gradient: "var(--grad-d3)", label: "D-01" },
@@ -3664,104 +3715,109 @@ ${extra}
         return text || "응답을 가져오지 못했습니다.";
       };
 
-      // B-01 전용: 네이버 책 검색 API로 KDC 분야별 키워드를 순회하며 신간 후보를 결정론적으로 수집.
-      // LLM 그라운딩(검색 도구) 대신 이 API 호출 결과를 사용자 메시지에 첨부해 전달한다 — 토큰·비용·타임아웃 부담 없음.
-      const fetchB01NaverCandidates = async () => {
-        const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      // B-01 전용: SEOJI(국립중앙도서관 서지정보유통지원시스템)를 1차 수집원으로 신간 후보를 결정론적으로 수집.
+      // 2026-07-18 사서 지시: 전자책 제외(ebook_yn=N)·종이책(form=종이책)만 서버측에서 필터링해 요청하고,
+      // 제본형태(FORM_DETAIL)는 B01_ALLOWED_FORM_DETAILS(무선제본·양장본·보드북)만 클라이언트에서 추가로 남긴다.
+      // SEOJI엔 주제/카테고리 검색 파라미터가 없어(과거 8키워드 버킷 방식 폐기) 등록일(INPUT_DATE) 최신순으로 훑는다.
+      const fetchB01SeojiCandidates = async () => {
         const seen = new Set();
-        const candidates = [];
-        // 키워드당 display=100(네이버 최대 단건 조회 수)으로 넉넉히 가져온 뒤 필터링·중복제거.
-        // 실측(2026-07-10): 8개 키워드 × 100건 → 필터 후 약 490건 확보, 2페이지째는 신규 후보가 거의 없어 1페이지로 충분.
-        await Promise.all(B01_NAVER_KEYWORDS.map(async (keyword) => {
-          try {
-            const res = await fetch(NAVER_BOOKS_API_URL, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ query: keyword, display: 100, sort: "date" }),
-            });
-            const data = await res.json();
-            const perKeyword = [];
-            (data.items || []).forEach(item => {
-              const isbn = (item.isbn || "").trim();
-              const title = (item.title || "").replace(/<[^>]+>/g, "");
-              const pubdate = item.pubdate || "";
-              if (!isbn) return; // ISBN 없는 세트/묶음 상품 등 이상치 제외
-              if (!pubdate || pubdate.length !== 8 || pubdate > todayStr) return; // 아직 출간 안 된 예약판매·형식오류 제외
-              if (/세트|전\d+권/.test(title)) return; // 묶음 상품 제외
-              if (seen.has(isbn)) return;
-              seen.add(isbn);
-              perKeyword.push({
-                title, isbn, pubdate,
-                author: (item.author || "").replace(/<[^>]+>/g, ""),
-                publisher: item.publisher || "",
-                price: item.discount && item.discount !== "0" ? item.discount : "",
-                link: item.link || "",
-                kdcHint: keyword,
-              });
-            });
-            // 프롬프트 크기 관리: 키워드(분야)당 최신순 상위 20건만 채택 — KDC 분야별 균형을 유지하면서 총량을 제어
-            perKeyword.sort((a, b) => b.pubdate.localeCompare(a.pubdate));
-            candidates.push(...perKeyword.slice(0, 20));
-          } catch (e) {
-            // 특정 키워드 실패는 건너뛰고 나머지 결과로 계속 진행
-          }
-        }));
-        return await verifyB01SuspectedOutOfPrint(candidates);
-      };
-
-      // 네이버 책 검색 결과에 정가(price/discount)가 둘 다 없는 후보는 "절판 의심"으로 남는다.
-      // 알라딘의 stockStatus 같은 재고 필드가 네이버에는 없어, 대신 SEOJI(국립중앙도서관 서지정보)를
-      // ISBN으로 재조회해 정가(PRE_PRICE) 확인이 되는지로 절판 의심을 보강 판정한다.
-      // 대상은 절판 의심 후보로 한정해 호출량을 제어한다(전체 후보를 SEOJI로 재조회하지 않음).
-      const verifyB01SuspectedOutOfPrint = async (candidates) => {
-        const suspects = candidates.filter(c => !c.price);
-        if (!suspects.length) return candidates;
-        const verified = await Promise.all(suspects.map(async (c) => {
+        const raw = [];
+        // page_size 200 × 2페이지 병렬 수집 — ebook_yn/form을 서버측에서 이미 걸러주므로 8키워드 순회보다 호출 수가 적다.
+        await Promise.all([1, 2].map(async (pageNo) => {
           try {
             const res = await fetch(SEOJI_API_URL, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ isbn: c.isbn, pageSize: 1 }),
+              body: JSON.stringify({
+                ebookYn: "N", form: "종이책", sort: "INPUT_DATE", orderBy: "DESC",
+                pageNo, pageSize: 200,
+              }),
             });
             const data = await res.json();
-            const doc = data.docs && data.docs[0];
-            if (doc && doc.PRE_PRICE) {
-              return { ...c, price: doc.PRE_PRICE, seojiChecked: true };
-            }
-            return { ...c, seojiChecked: true, seojiOutOfPrintSuspect: true };
+            (data.docs || []).forEach(doc => raw.push(doc));
           } catch (e) {
-            return c; // SEOJI 조회 실패 시 기존 절판 의심 상태 그대로 유지
+            // 특정 페이지 실패는 건너뛰고 나머지 결과로 계속 진행
           }
         }));
-        const byIsbn = new Map(verified.map(c => [c.isbn, c]));
+        const candidates = [];
+        raw.forEach(doc => {
+          const isbn = (doc.EA_ISBN || "").trim();
+          const title = (doc.TITLE || "").trim();
+          const formDetail = (doc.FORM_DETAIL || "").trim();
+          if (!isbn || !title) return; // ISBN·서명 없는 이상치 제외
+          if (!B01_ALLOWED_FORM_DETAILS.includes(formDetail)) return; // 무선제본/양장본/보드북 외 제본형태 제외
+          if (/세트|전\d+권/.test(title)) return; // 묶음 상품 제외
+          if (seen.has(isbn)) return;
+          seen.add(isbn);
+          const price = /^\d+$/.test(doc.PRE_PRICE || "") ? doc.PRE_PRICE : "";
+          candidates.push({
+            title, isbn, formDetail,
+            pubdate: doc.PUBLISH_PREDATE || doc.REAL_PUBLISH_DATE || "",
+            author: (doc.AUTHOR || "").trim(),
+            publisher: (doc.PUBLISHER || "").trim(),
+            price, link: "",
+          });
+        });
+        // 프롬프트 크기 관리: 등록일 최신순 상위 150건만 채택(등록일 순으로 이미 정렬돼 있어 slice로 충분)
+        return await enrichB01PriceViaNaver(candidates.slice(0, 150));
+      };
+
+      // SEOJI는 CIP 등록 시점의 예정 정가(PRE_PRICE)를 제공하지만, 등록 직후라 아직 정가가 확정되지 않은
+      // 경우가 흔하다. 정가가 비어있는 후보만 네이버 책 검색(2차)으로 제목 조회해 ISBN이 정확히 일치하는
+      // 결과가 있으면 정가·표지·링크를 보완한다. 신간이라 네이버 쇼핑에 아직 등록 안 된 경우도 많아 실패해도
+      // "확인필요"로 남기고 전체 수집을 막지 않는다(전체 후보를 다 재조회하지 않아 호출량도 제어됨).
+      const enrichB01PriceViaNaver = async (candidates) => {
+        const suspects = candidates.filter(c => !c.price);
+        if (!suspects.length) return candidates;
+        const enriched = await Promise.all(suspects.map(async (c) => {
+          try {
+            const res = await fetch(NAVER_BOOKS_API_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ query: c.title, display: 5, sort: "sim" }),
+            });
+            const data = await res.json();
+            const match = (data.items || []).find(item => (item.isbn || "").trim() === c.isbn);
+            if (match) {
+              return {
+                ...c,
+                price: match.discount && match.discount !== "0" ? match.discount : c.price,
+                link: match.link || "",
+                naverChecked: true,
+              };
+            }
+            return { ...c, naverChecked: true };
+          } catch (e) {
+            return c; // 네이버 조회 실패 시 기존 상태 그대로 유지
+          }
+        }));
+        const byIsbn = new Map(enriched.map(c => [c.isbn, c]));
         return candidates.map(c => byIsbn.get(c.isbn) || c);
       };
 
       // 수집된 후보를 B-01에게 보낼 텍스트 블록으로 직렬화
-      const formatB01NaverBlock = (candidates) => {
-        if (!candidates.length) return "\n\n[네이버 책 검색 수집 결과]\n(수집된 후보 없음 — 검색 키워드를 조정하거나 SEOJI로 직접 확인이 필요합니다.)";
+      const formatB01SeojiBlock = (candidates) => {
+        if (!candidates.length) return "\n\n[SEOJI 신간 후보 수집 결과]\n(수집된 후보 없음 — 조건에 맞는 신간이 없거나 SEOJI 응답 오류입니다.)";
         const lines = candidates.map(c => {
-          const priceLabel = c.price
-            ? `${c.price}원`
-            : c.seojiOutOfPrintSuspect ? "확인불가(SEOJI 재조회에도 정가 없음 — 절판 의심)" : "확인필요";
-          return `- ${c.title} | 저자: ${c.author || "미상"} | 출판사: ${c.publisher} | 출간일: ${c.pubdate} | 정가: ${priceLabel} | ISBN: ${c.isbn} | 링크: ${c.link || "확인불가"} | 분야키워드: ${c.kdcHint}`;
+          const priceLabel = c.price ? `${c.price}원` : "확인필요";
+          return `- ${c.title} | 저자: ${c.author || "미상"} | 출판사: ${c.publisher} | 출간일: ${c.pubdate || "미상"} | 정가: ${priceLabel} | ISBN: ${c.isbn} | 링크: ${c.link || "확인불가"} | 제본: ${c.formDetail}`;
         });
-        return `\n\n[네이버 책 검색 수집 결과 — 총 ${candidates.length}건, SEOJI 절판 의심 재확인 포함]\n${lines.join("\n")}`;
+        return `\n\n[SEOJI 신간 후보 수집 결과 — 총 ${candidates.length}건, 조건: 전자책 제외(EBOOK_YN=N)·형태=종이책·제본=무선제본/양장본/보드북만, 네이버 책 검색 정가 보완 포함]\n${lines.join("\n")}`;
       };
 
       // B-01 결정론적 검증 가드: KDC가 좁게 지정되는 등 실제 수집 후보와 잘 안 맞는 요청에서
       // 모델(gemini-flash-latest, thinkingBudget:0)이 "절대 규칙"을 어기고 실재하지 않는 도서를
       // 지어내는 사례가 있어(2026-07-16 확인), 프롬프트 준수에만 기대지 않고 코드 레벨에서 한 번 더 막는다.
-      // 대화에 실제로 첨부됐던 [네이버 책 검색 수집 결과] 블록에서 ISBN을 모두 모아 "실재 후보 집합"을 만들고,
+      // 대화에 실제로 첨부됐던 [SEOJI 신간 후보 수집 결과] 블록에서 ISBN을 모두 모아 "실재 후보 집합"을 만들고,
       // 최종 엑셀 표의 각 행 ISBN을 이 집합과 대조해 없는 행(=허구 도서)은 자동 제외한다.
       const normalizeIsbn = (s) => (s || "").replace(/[^0-9Xx]/g, "").toUpperCase();
 
-      // 반드시 formatB01NaverBlock()이 실제로 첨부한 데이터 블록(불릿 줄) 안의 ISBN만 인정한다.
+      // 반드시 formatB01SeojiBlock()이 실제로 첨부한 데이터 블록(불릿 줄) 안의 ISBN만 인정한다.
       // 메시지 전체를 훑으면 AI가 과거 턴 본문에서 지어낸 책의 "ISBN: xxx" 문구까지 "실재"로
       // 잘못 등록되어(자기 오염), 다음 턴 검증에서 그 허구 ISBN이 통과해버리는 사례가 있었다(2026-07-18 확인).
       const extractKnownB01Isbns = (msgs) => {
         const isbns = new Set();
-        const blockRe = /\[네이버 책 검색 수집 결과[^\n]*\]\n((?:- .*(?:\n|$))*)/g;
+        const blockRe = /\[SEOJI 신간 후보 수집 결과[^\n]*\]\n((?:- .*(?:\n|$))*)/g;
         const isbnRe = /ISBN:\s*([0-9Xx]+)/g;
         msgs.forEach(m => {
           if (typeof m.content !== "string") return;
@@ -3816,7 +3872,7 @@ ${extra}
         let result = content;
         if (removed) {
           const newTable = rowsToMarkdownTable([rows[0], ...kept]);
-          const warning = `\n\n⚠️ **검증 실패 ${removed}건 자동 제외**: ISBN 형식이 유효하지 않거나 실제 네이버 책 검색 수집 결과에 없는 항목이 포함되어 있어 선정 목록에서 제외했습니다(시스템이 수집하지 않았거나 형식이 올바르지 않은 항목은 존재를 신뢰할 수 없습니다). 지정하신 KDC·조건에 맞는 실제 후보가 부족했을 수 있습니다 — 검색 키워드를 조정해 재수집하거나 사서님이 직접 후보를 추가해 주세요.`;
+          const warning = `\n\n⚠️ **검증 실패 ${removed}건 자동 제외**: ISBN 형식이 유효하지 않거나 실제 SEOJI 신간 후보 수집 결과에 없는 항목이 포함되어 있어 선정 목록에서 제외했습니다(시스템이 수집하지 않았거나 형식이 올바르지 않은 항목은 존재를 신뢰할 수 없습니다). 지정하신 KDC·조건에 맞는 실제 후보가 부족했을 수 있습니다 — 재수집하거나 사서님이 직접 후보를 추가해 주세요.`;
           result = result.replace(excelM[0], `===엑셀시작===\n${newTable}\n===엑셀끝===`) + warning;
         }
 
@@ -4044,11 +4100,11 @@ ${extra}
             }
             userMsg += `\n\n원본 지시: ${state.originalInstruction}`;
             // B-01이 DM 위임으로 처음 실행될 때도, 직접 B-01 탭에서 대화할 때와 동일하게
-            // 네이버 책 검색 수집을 자동으로 먼저 실행해 결과를 붙여준다 — 그래야 B-01이
+            // SEOJI 신간 후보 수집을 자동으로 먼저 실행해 결과를 붙여준다 — 그래야 B-01이
             // "수집 결과를 달라"고 되묻지 않고 곧바로 목록 작성을 시작한다.
             if (targetId === "b01-acquisition") {
-              const candidates = await fetchB01NaverCandidates();
-              userMsg += formatB01NaverBlock(candidates);
+              const candidates = await fetchB01SeojiCandidates();
+              userMsg += formatB01SeojiBlock(candidates);
             }
             leafMessages = [{ role: "user", content: userMsg }];
           }
@@ -4091,6 +4147,20 @@ ${extra}
             if (targetId === "b01-acquisition") {
               reply = verifyB01ExcelIsbns(reply, extractKnownB01Isbns(leafMessages));
             }
+            // B-02가 DM 위임 경로로 호출된 경우도 직접 탭 대화와 동일하게 SEOJI 포맷 조회를 수행한다.
+            if (targetId === "b02-wishlist") {
+              const seojiReq = parseSeojiFormatQueryBlock(reply);
+              if (seojiReq) {
+                let followUpContent;
+                try {
+                  const result = await runB02SeojiFormatQuery(seojiReq);
+                  followUpContent = `[SEOJI 포맷 조회 결과]\n${JSON.stringify(result)}`;
+                } catch (e) {
+                  followUpContent = `[SEOJI 포맷 조회 실패: ${e.message}]`;
+                }
+                reply = await callApi(systemPromptFor(targetId) + ORCHESTRATION_HITL_SUFFIX, [...leafMessages, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
+              }
+            }
           } catch (err) {
             setBAgentMsgs(prev => ({ ...prev, [tab]: [...prev[tab], { role: "assistant", content: "오류가 발생했습니다.\n\n" + err.message, agentId: targetId }] }));
             setDmChains(prev => ({ ...prev, [tab]: { ...state, leafMessages } }));
@@ -4127,17 +4197,17 @@ ${extra}
             // 그 리프와의 대화를 이어가는 답변이다.
             await runDmChain(tab, { ...pausedChain, leafMessages: [...pausedChain.leafMessages, { role: "user", content: userText }] });
           } else {
-            // B-01: 이 대화에서 아직 네이버 수집 데이터를 받은 적이 없거나, 사서가 재수집을 요청한 경우에만
-            // 네이버 검색 결과를 API 호출용 메시지에만 첨부한다 (화면에 보이는 채팅 로그는 깔끔하게 유지).
+            // B-01: 이 대화에서 아직 SEOJI 수집 데이터를 받은 적이 없거나, 사서가 재수집을 요청한 경우에만
+            // SEOJI 검색 결과를 API 호출용 메시지에만 첨부한다 (화면에 보이는 채팅 로그는 깔끔하게 유지).
             // 과거에는 "수집|후보|신간|찾아|검색" 키워드 매칭으로 트리거했으나, "수서 목록 작성해줘"처럼
             // 키워드가 없는 요청에서는 수집이 누락되어 에이전트가 데이터 대기 상태로 멈추는 문제가 있었다.
             let apiMsgs = newMsgs;
             if (tab === "b01-acquisition") {
-              const alreadyCollected = currentMsgs.some(m => typeof m.content === "string" && m.content.includes("[네이버 책 검색 수집 결과"));
+              const alreadyCollected = currentMsgs.some(m => typeof m.content === "string" && m.content.includes("[SEOJI 신간 후보 수집 결과"));
               const wantsRecollect = /재수집|다시\s*(수집|검색|찾)/.test(userText);
               if (!alreadyCollected || wantsRecollect) {
-                const candidates = await fetchB01NaverCandidates();
-                apiMsgs = newMsgs.slice(0, -1).concat({ role: "user", content: userText + formatB01NaverBlock(candidates) });
+                const candidates = await fetchB01SeojiCandidates();
+                apiMsgs = newMsgs.slice(0, -1).concat({ role: "user", content: userText + formatB01SeojiBlock(candidates) });
               }
             }
             stream = makeStreamHandler(setter);
@@ -4185,6 +4255,20 @@ ${extra}
               stream.finalize(finalReply);
             } else if (tab === "b01-acquisition") {
               stream.finalize(verifyB01ExcelIsbns(reply, extractKnownB01Isbns(apiMsgs)));
+            } else if (tab === "b02-wishlist" && parseSeojiFormatQueryBlock(reply)) {
+              // B-02가 R-04(포맷) 반려 기준 판정 전 신청 건의 EBOOK_YN·FORM·FORM_DETAIL을 SEOJI로
+              // 확인 요청했다면(===SEOJI_FORMAT_QUERY===), 화면에는 보여주지 않고 api/seoji.js를
+              // 호출해 결과를 후속 메시지로 넣어 최종 판정 답변을 다시 받는다.
+              const seojiReq = parseSeojiFormatQueryBlock(reply);
+              let followUpContent;
+              try {
+                const result = await runB02SeojiFormatQuery(seojiReq);
+                followUpContent = `[SEOJI 포맷 조회 결과]\n${JSON.stringify(result)}`;
+              } catch (e) {
+                followUpContent = `[SEOJI 포맷 조회 실패: ${e.message}]`;
+              }
+              const finalReply = await callApi(prompt, [...apiMsgs, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
+              stream.finalize(finalReply);
             } else {
               stream.finalize(reply);
             }
