@@ -2841,6 +2841,41 @@ ${extra}
       return { targets, note: typeof parsed.note === "string" ? parsed.note : "" };
     };
 
+    // ── 총괄 지시: 입력 중인 지시문에 맞는 에이전트 추천 ────────────
+    // 사서가 홈 콘솔에 지시문을 입력하면, 어떤 에이전트(리프 또는 도메인)로 보내면 좋을지
+    // 모델이 판단해 "추천"만 한다 — 자동으로 선택하거나 이동시키지 않고, 사서가 칩을 눌러
+    // 직접 선택할 때만 "받는 에이전트"에 추가된다(오분류 시에도 항상 사서 확인·수동 선택이 최종).
+    const ORCHESTRATION_RECOMMENDABLE_AGENTS = DOMAINS.filter(d => !d.comingSoon).flatMap(d => d.agents);
+    const ORCHESTRATION_RECOMMENDABLE_IDS = new Set(ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => a.id));
+    const ORCHESTRATION_RECOMMEND_SYSTEM_PROMPT = `당신은 LibrarAI 총괄 지시 콘솔의 라우팅 도우미입니다. 사서가 입력한 지시문을 분석해, 아래 에이전트 목록 중 이 지시를 처리하기에 가장 적합한 에이전트를 최대 3개까지 추천하십시오.
+
+## 에이전트 목록
+${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.description}`).join("\n")}
+
+## 규칙
+- 지시문이 여러 업무를 포괄하면 관련 에이전트를 최대 3개까지 추천합니다. 특정 리프 하나로 좁혀지지 않고 도메인 전체에 걸친 지시라면 이름에 "도메인"이 포함된 항목을 추천합니다.
+- 반드시 위 목록에 있는 id만 사용하고, 목록에 없는 id를 지어내지 않습니다.
+- 적합한 에이전트가 전혀 없으면 빈 배열을 반환합니다.
+- 설명이나 다른 텍스트 없이, 아래 형식만 정확히 출력하십시오.
+
+===추천===
+{"agents": ["id1", "id2"]}
+===추천끝===`;
+    const RECOMMEND_BLOCK_RE = /===추천===([\s\S]*?)===추천끝===/;
+    const parseOrchestrationRecommendation = (text) => {
+      const m = RECOMMEND_BLOCK_RE.exec(text || "");
+      if (!m) return [];
+      const raw = m[1].trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch { return []; }
+      if (!Array.isArray(parsed.agents)) return [];
+      const ids = [];
+      parsed.agents.forEach(id => {
+        if (typeof id === "string" && ORCHESTRATION_RECOMMENDABLE_IDS.has(id) && !ids.includes(id)) ids.push(id);
+      });
+      return ids.slice(0, 3);
+    };
+
     // ── B-03: 실제 DB 조회 요청 블록 파싱 ──────────────────────────
     // B-03이 복본 판정 전 ===DB_QUERY===...===DB_QUERY_END=== 블록으로 조회를 요청하면
     // 파싱해 api/books.js를 호출하고, 결과를 후속 메시지로 넣어 다시 답변을 받는다.
@@ -3377,6 +3412,9 @@ ${extra}
       const [orchestrationText, setOrchestrationText] = useState("");
       const [orchestrationAgents, setOrchestrationAgents] = useState([]);
       const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+      const [orchestrationSuggestions, setOrchestrationSuggestions] = useState([]); // 추천 에이전트 id 목록(자동 선택 아님)
+      const [orchestrationSuggestLoading, setOrchestrationSuggestLoading] = useState(false);
+      const orchestrationSuggestReqRef = useRef(0); // 디바운스 중 더 최신 요청이 들어오면 이전 응답을 무시하기 위한 카운터
       const [expandedStep, setExpandedStep] = useState(null); // "planId:stepIndex"
       const [replyDrafts, setReplyDrafts] = useState({}); // "planId:stepIndex" → 입력 중인 답변 텍스트
       const [revisingStep, setRevisingStep] = useState(null); // "planId:stepIndex" — 완료된 단계에 수정 요청 입력창을 열어둔 상태
@@ -3491,6 +3529,38 @@ ${extra}
       const toggleOrchestrationAgent = (id) => {
         setOrchestrationAgents(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
       };
+
+      // 추천 칩은 토글이 아니라 "선택"이다 — "+추가" 피커를 열지 않고 클릭 한 번으로 바로 받는 에이전트에 들어간다.
+      const pickOrchestrationSuggestion = (id) => {
+        setOrchestrationAgents(prev => prev.includes(id) ? prev : [...prev, id]);
+      };
+
+      // 지시문 입력이 멎으면(700ms) 추천 에이전트를 조회한다 — 결과는 칩으로만 보여주고 자동으로
+      // "받는 에이전트"에 넣지 않는다(오분류가 나와도 항상 사서의 클릭이 최종 선택).
+      useEffect(() => {
+        const text = orchestrationText.trim();
+        if (text.length < 6) {
+          setOrchestrationSuggestions([]);
+          setOrchestrationSuggestLoading(false);
+          return;
+        }
+        const reqId = ++orchestrationSuggestReqRef.current;
+        const timer = setTimeout(async () => {
+          setOrchestrationSuggestLoading(true);
+          try {
+            const reply = await requestApi([
+              { role: "system", content: ORCHESTRATION_RECOMMEND_SYSTEM_PROMPT },
+              { role: "user", content: text },
+            ], 0);
+            if (orchestrationSuggestReqRef.current === reqId) setOrchestrationSuggestions(parseOrchestrationRecommendation(reply));
+          } catch (e) {
+            if (orchestrationSuggestReqRef.current === reqId) setOrchestrationSuggestions([]);
+          } finally {
+            if (orchestrationSuggestReqRef.current === reqId) setOrchestrationSuggestLoading(false);
+          }
+        }, 700);
+        return () => clearTimeout(timer);
+      }, [orchestrationText]);
 
       const submitOrchestration = () => {
         const text = orchestrationText.trim();
@@ -4624,6 +4694,20 @@ ${extra}
                     style={{ marginLeft: "auto", padding: "8px 16px", background: (!orchestrationText.trim() || orchestrationAgents.length === 0) ? "var(--line-strong)" : "var(--accent)", color: "white", border: "none", borderRadius: "var(--radius-btn)", fontSize: "13px", fontWeight: "700", cursor: (!orchestrationText.trim() || orchestrationAgents.length === 0) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: "0 2px 6px rgba(30,110,92,.25)" }}
                   >일괄 지시 ↵</button>
                 </div>
+                {(orchestrationSuggestLoading || orchestrationSuggestions.some(id => !orchestrationAgents.includes(id))) && (
+                  <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
+                    <span style={{ fontSize: "11px", color: "var(--faint)" }}>🤖 추천</span>
+                    {orchestrationSuggestLoading ? (
+                      <span style={{ fontSize: "11.5px", color: "var(--faint)" }}>분석 중…</span>
+                    ) : (
+                      orchestrationSuggestions.filter(id => !orchestrationAgents.includes(id)).map(id => (
+                        <button key={id} onClick={() => pickOrchestrationSuggestion(id)}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "5px", border: "1px solid var(--accent)", background: "var(--surface)", color: "var(--accent)", fontSize: "11.5px", fontWeight: "700", padding: "4px 8px", borderRadius: "var(--radius-pill)", cursor: "pointer", fontFamily: "inherit" }}
+                        >{codeFor(id)} {nameFor(id)} +</button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               {plans.length > 0 && (
