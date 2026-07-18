@@ -11,7 +11,7 @@ module.exports = async function handler(req, res) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY가 서버에 설정되지 않았습니다.' });
 
-  const { model, systemInstruction, contents, grounding, thinkingBudget } = req.body;
+  const { model, systemInstruction, contents, grounding, thinkingBudget, temperature } = req.body;
   // 기본값: 버전 고정 대신 최신 Flash 별칭 사용 — 특정 버전(예: 2.5-flash)은 신규 키에 대해 언제든
   // 서비스 종료(404)될 수 있음(2026-07-10 실제 발생). 필요 시 요청 body의 model 값으로 교체 가능.
   const modelName = model || 'gemini-flash-latest';
@@ -20,6 +20,9 @@ module.exports = async function handler(req, res) {
   // (턴당 검색 반복 호출로 토큰·비용 폭증, 30초 타임아웃 근접 문제가 있었음 — 되돌릴 필요 없이 옵션화).
   // thinking(내부 추론) 기본 비활성화 — 55건 점수화 같은 무거운 요청에서 thinking 토큰이 응답 시간을
   // 60초 이상으로 늘려 타임아웃을 유발함(2026-07-10 실측). 필요 시 body에 thinkingBudget 지정 가능.
+  // temperature 기본 0 — B-01이 첨부된 실제 네이버/SEOJI 수집 데이터를 벗어나 존재하지 않는 도서를
+  // 지어내는 사례가 있어(2026-07-16 확인) 그라운딩 정확도를 우선한다. 필요 시 body의 temperature로 override.
+  const temp = temperature != null ? temperature : 0;
 
   try {
     const upstream = await fetch(
@@ -31,7 +34,7 @@ module.exports = async function handler(req, res) {
           contents,
           ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
           ...(grounding ? { tools: [{ google_search: {} }] } : {}),
-          generationConfig: { thinkingConfig: { thinkingBudget: thinkingBudget != null ? thinkingBudget : 0 } },
+          generationConfig: { temperature: temp, thinkingConfig: { thinkingBudget: thinkingBudget != null ? thinkingBudget : 0 } },
         }),
       }
     );

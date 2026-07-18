@@ -3753,6 +3753,51 @@ ${extra}
         return `\n\n[네이버 책 검색 수집 결과 — 총 ${candidates.length}건, SEOJI 절판 의심 재확인 포함]\n${lines.join("\n")}`;
       };
 
+      // B-01 결정론적 검증 가드: KDC가 좁게 지정되는 등 실제 수집 후보와 잘 안 맞는 요청에서
+      // 모델(gemini-flash-latest, thinkingBudget:0)이 "절대 규칙"을 어기고 실재하지 않는 도서를
+      // 지어내는 사례가 있어(2026-07-16 확인), 프롬프트 준수에만 기대지 않고 코드 레벨에서 한 번 더 막는다.
+      // 대화에 실제로 첨부됐던 [네이버 책 검색 수집 결과] 블록에서 ISBN을 모두 모아 "실재 후보 집합"을 만들고,
+      // 최종 엑셀 표의 각 행 ISBN을 이 집합과 대조해 없는 행(=허구 도서)은 자동 제외한다.
+      const normalizeIsbn = (s) => (s || "").replace(/[^0-9Xx]/g, "").toUpperCase();
+
+      const extractKnownB01Isbns = (msgs) => {
+        const isbns = new Set();
+        msgs.forEach(m => {
+          if (typeof m.content !== "string") return;
+          const re = /ISBN:\s*([0-9Xx]+)/g;
+          let match;
+          while ((match = re.exec(m.content))) isbns.add(normalizeIsbn(match[1]));
+        });
+        return isbns;
+      };
+
+      const rowsToMarkdownTable = (rows) => {
+        if (!rows.length) return "";
+        const sep = rows[0].map(() => "---");
+        const toLine = (r) => `| ${r.join(" | ")} |`;
+        return [toLine(rows[0]), toLine(sep), ...rows.slice(1).map(toLine)].join("\n");
+      };
+
+      const verifyB01ExcelIsbns = (content, knownIsbns) => {
+        const excelM = content.match(/===엑셀시작===([\s\S]*?)===엑셀끝===/);
+        if (!excelM) return content;
+        const rows = parseMarkdownTableRows(excelM[1].trim().split("\n"));
+        if (!rows.length) return content;
+        const isbnIdx = rows[0].findIndex(h => /isbn/i.test(h));
+        if (isbnIdx === -1) return content; // ISBN 컬럼 자체가 없으면 검증 불가 — 통과시킨다
+        const kept = [];
+        let removed = 0;
+        rows.slice(1).forEach(r => {
+          const isbn = normalizeIsbn(r[isbnIdx] || "");
+          if (isbn && knownIsbns.has(isbn)) kept.push(r);
+          else removed++;
+        });
+        if (!removed) return content;
+        const newTable = rowsToMarkdownTable([rows[0], ...kept]);
+        const warning = `\n\n⚠️ **검증 실패 ${removed}건 자동 제외**: 실제 네이버 책 검색 수집 결과에 없는 ISBN이 포함되어 있어 선정 목록에서 제외했습니다(시스템이 수집하지 않은 항목은 존재를 신뢰할 수 없습니다). 지정하신 KDC·조건에 맞는 실제 후보가 부족했을 수 있습니다 — 검색 키워드를 조정해 재수집하거나 사서님이 직접 후보를 추가해 주세요.`;
+        return content.replace(excelM[0], `===엑셀시작===\n${newTable}\n===엑셀끝===`) + warning;
+      };
+
       const callApi = async (prompt, msgs, onChunk) => {
         const isPrRequest = prompt.startsWith(PR_SYSTEM_PROMPT);
         const isB01Request = prompt.startsWith(B01_SYSTEM_PROMPT);
@@ -4010,6 +4055,10 @@ ${extra}
                 reply = await callApi(systemPromptFor(targetId) + ORCHESTRATION_HITL_SUFFIX, [...leafMessages, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
               }
             }
+            // B-01이 DM 위임 경로로 호출된 경우도 직접 탭 대화와 동일하게 엑셀 ISBN 검증 가드를 적용한다.
+            if (targetId === "b01-acquisition") {
+              reply = verifyB01ExcelIsbns(reply, extractKnownB01Isbns(leafMessages));
+            }
           } catch (err) {
             setBAgentMsgs(prev => ({ ...prev, [tab]: [...prev[tab], { role: "assistant", content: "오류가 발생했습니다.\n\n" + err.message, agentId: targetId }] }));
             setDmChains(prev => ({ ...prev, [tab]: { ...state, leafMessages } }));
@@ -4102,6 +4151,8 @@ ${extra}
               }
               const finalReply = await callApi(prompt, [...apiMsgs, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
               stream.finalize(finalReply);
+            } else if (tab === "b01-acquisition") {
+              stream.finalize(verifyB01ExcelIsbns(reply, extractKnownB01Isbns(apiMsgs)));
             } else {
               stream.finalize(reply);
             }
