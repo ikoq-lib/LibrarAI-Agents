@@ -14,13 +14,15 @@ LibrarAI is a Korean public library AI management system consisting of three spe
 
 - **Frontend**: React (JSX), deployed on Vercel
 - **Database**: Supabase (book DB, loan history, statistics)
-- **AI**: Anthropic Claude API (claude-sonnet or latest)
-- **External APIs**: Aladin Open API (TTB key) for book metadata
+- **AI**: OpenRouter (2026-07-09 현재, `LibrarAI.html`의 실제 백엔드) — Claude/GPT 모델을 사이드바 드롭다운으로 선택해 테스트 중. 이전에는 Groq(Llama 3.3)였음. **실제 배포 시점에는 프롬프트 캐싱 비용 이점을 위해 Anthropic/OpenAI 다이렉트 API로 전환 예정** (아래 "Pending Issues" 참고)
+- **External APIs**: Aladin Open API 차단으로 2026-07-09부터 SEOJI(국립중앙도서관 서지정보유통지원시스템)+네이버 책 검색 API로 대체 (`.env.local` 참고). **2026-07-15부터 Claude Code 에이전트(B-01·B-02)는 네이버 책 검색 API를 `mcp__naver-shopping__search-book` MCP 도구로 호출** (`~/.claude/mcp-servers/naver-api-mcp`, D-02가 쓰는 `search-shopping`과 동일 서버). 웹앱(`api/`)에서의 실제 호출 경로는 별도 확인 필요.
 - **File processing**: xlsx.js (loaded dynamically from CDN) for KDC statistics Excel files
 
 ## Architecture Pattern
 
-Each agent is a self-contained React component with:
+**`LibrarAI.html`(현재 메인 구현)의 실제 아키텍처(2026-07-09 확인):** 아래 항목들과 달리, 모든 ~30개 에이전트 탭이 **단일 공유 백엔드 프록시**(`api/chat.js`, Vercel 서버리스 함수)를 통해서만 API를 호출한다. API 키는 서버측 환경변수(`OPENROUTER_API_KEY`)에만 존재하며, **사이드바에 API 키를 입력하는 UI는 존재하지 않는다.** 브라우저에서 외부 LLM API를 직접 호출하는 코드도 없다.
+
+아래는 원래(레퍼런스 구현 기준) 문서화된 패턴이며, 개별 에이전트 프로토타입 파일(`../library/*.jsx.txt`)에는 여전히 해당될 수 있으나 `LibrarAI.html`에는 적용되지 않는다:
 - A hardcoded `SYSTEM_PROMPT` defining role, institution config, and workflow rules
 - A `STAGES` array mapping workflow steps to sub-tasks and initial prompts
 - A left sidebar for stage navigation and API key / file upload inputs
@@ -48,7 +50,7 @@ Stored in `../.env.local` (parent directory):
 ## Document Output Format
 
 - **모든 문서는 hwpx 형식으로 출력한다.** 행사 기획안, 기안문, 첨부 등 도서관 업무 관련 문서를 생성할 때는 항상 hwpx 파일로 만들어야 한다.
-- hwpx 변환은 `hwpx-autofil-conversion` 스킬을 사용한다.
+- hwpx 변환은 `hwpx-autofill-conversion` 스킬을 사용한다.
 
 ## 공문서 작성 필수 규칙
 
