@@ -3756,15 +3756,31 @@ ${extra}
       // 최종 엑셀 표의 각 행 ISBN을 이 집합과 대조해 없는 행(=허구 도서)은 자동 제외한다.
       const normalizeIsbn = (s) => (s || "").replace(/[^0-9Xx]/g, "").toUpperCase();
 
+      // 반드시 formatB01NaverBlock()이 실제로 첨부한 데이터 블록(불릿 줄) 안의 ISBN만 인정한다.
+      // 메시지 전체를 훑으면 AI가 과거 턴 본문에서 지어낸 책의 "ISBN: xxx" 문구까지 "실재"로
+      // 잘못 등록되어(자기 오염), 다음 턴 검증에서 그 허구 ISBN이 통과해버리는 사례가 있었다(2026-07-18 확인).
       const extractKnownB01Isbns = (msgs) => {
         const isbns = new Set();
+        const blockRe = /\[네이버 책 검색 수집 결과[^\n]*\]\n((?:- .*(?:\n|$))*)/g;
+        const isbnRe = /ISBN:\s*([0-9Xx]+)/g;
         msgs.forEach(m => {
           if (typeof m.content !== "string") return;
-          const re = /ISBN:\s*([0-9Xx]+)/g;
-          let match;
-          while ((match = re.exec(m.content))) isbns.add(normalizeIsbn(match[1]));
+          let blockMatch;
+          while ((blockMatch = blockRe.exec(m.content))) {
+            let isbnMatch;
+            isbnRe.lastIndex = 0;
+            while ((isbnMatch = isbnRe.exec(blockMatch[1]))) isbns.add(normalizeIsbn(isbnMatch[1]));
+          }
         });
         return isbns;
+      };
+
+      // ISBN-13 체크디지트 검증 — 화이트리스트 매칭과 무관하게 형식 자체가 무효한 번호를 걸러낸다.
+      const isValidIsbn13Checksum = (isbn) => {
+        if (!/^\d{13}$/.test(isbn)) return false;
+        const digits = isbn.split("").map(Number);
+        const sum = digits.slice(0, 12).reduce((acc, d, i) => acc + d * (i % 2 === 0 ? 1 : 3), 0);
+        return ((10 - (sum % 10)) % 10) === digits[12];
       };
 
       const rowsToMarkdownTable = (rows) => {
@@ -3774,24 +3790,44 @@ ${extra}
         return [toLine(rows[0]), toLine(sep), ...rows.slice(1).map(toLine)].join("\n");
       };
 
+      // 본문에 적힌 "선정 초안: N종"이 실제 최종 표 행 수와 어긋나는 경우(2026-07-18 확인: 45종이라 말하고
+      // 표에는 10건만 실린 사례) 표 기준으로 정정한다 — 표는 구조적으로 검증되지만 서술 문구는 모델이 자유
+      // 서술하는 부분이라 별도 카운트 불일치가 생길 수 있다.
+      const B01_STATED_COUNT_RE = /(선정\s*초안\s*[:：]\s*)(\d+)(\s*종)/;
+
       const verifyB01ExcelIsbns = (content, knownIsbns) => {
         const excelM = content.match(/===엑셀시작===([\s\S]*?)===엑셀끝===/);
         if (!excelM) return content;
         const rows = parseMarkdownTableRows(excelM[1].trim().split("\n"));
         if (!rows.length) return content;
         const isbnIdx = rows[0].findIndex(h => /isbn/i.test(h));
-        if (isbnIdx === -1) return content; // ISBN 컬럼 자체가 없으면 검증 불가 — 통과시킨다
-        const kept = [];
-        let removed = 0;
-        rows.slice(1).forEach(r => {
-          const isbn = normalizeIsbn(r[isbnIdx] || "");
-          if (isbn && knownIsbns.has(isbn)) kept.push(r);
-          else removed++;
-        });
-        if (!removed) return content;
-        const newTable = rowsToMarkdownTable([rows[0], ...kept]);
-        const warning = `\n\n⚠️ **검증 실패 ${removed}건 자동 제외**: 실제 네이버 책 검색 수집 결과에 없는 ISBN이 포함되어 있어 선정 목록에서 제외했습니다(시스템이 수집하지 않은 항목은 존재를 신뢰할 수 없습니다). 지정하신 KDC·조건에 맞는 실제 후보가 부족했을 수 있습니다 — 검색 키워드를 조정해 재수집하거나 사서님이 직접 후보를 추가해 주세요.`;
-        return content.replace(excelM[0], `===엑셀시작===\n${newTable}\n===엑셀끝===`) + warning;
+        let kept, removed = 0;
+        if (isbnIdx === -1) {
+          kept = rows.slice(1); // ISBN 컬럼 자체가 없으면 존재 검증은 불가 — 건수 정합성만 확인한다
+        } else {
+          kept = [];
+          rows.slice(1).forEach(r => {
+            const isbn = normalizeIsbn(r[isbnIdx] || "");
+            if (isbn && isValidIsbn13Checksum(isbn) && knownIsbns.has(isbn)) kept.push(r);
+            else removed++;
+          });
+        }
+
+        let result = content;
+        if (removed) {
+          const newTable = rowsToMarkdownTable([rows[0], ...kept]);
+          const warning = `\n\n⚠️ **검증 실패 ${removed}건 자동 제외**: ISBN 형식이 유효하지 않거나 실제 네이버 책 검색 수집 결과에 없는 항목이 포함되어 있어 선정 목록에서 제외했습니다(시스템이 수집하지 않았거나 형식이 올바르지 않은 항목은 존재를 신뢰할 수 없습니다). 지정하신 KDC·조건에 맞는 실제 후보가 부족했을 수 있습니다 — 검색 키워드를 조정해 재수집하거나 사서님이 직접 후보를 추가해 주세요.`;
+          result = result.replace(excelM[0], `===엑셀시작===\n${newTable}\n===엑셀끝===`) + warning;
+        }
+
+        const countM = result.match(B01_STATED_COUNT_RE);
+        if (countM && Number(countM[2]) !== kept.length) {
+          const stated = countM[2];
+          result = result.replace(B01_STATED_COUNT_RE, `$1${kept.length}$3`)
+            + `\n\n⚠️ **선정 건수 표기 정정**: 응답 본문에는 "${stated}종"으로 기재되어 있었으나 실제 최종 선정 목록 표는 ${kept.length}건입니다 — 표 기준으로 정정했습니다.`;
+        }
+
+        return result;
       };
 
       const callApi = async (prompt, msgs, onChunk) => {
