@@ -17,7 +17,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'SEOJI_API_KEY_NL_DIRECT가 서버에 설정되지 않았습니다.' });
   }
 
-  const { isbn, setIsbn, title, author, publisher, startDate, endDate, pageNo, pageSize } = req.body || {};
+  const { isbn, setIsbn, title, author, publisher, startDate, endDate, pageNo, pageSize, sort, orderBy } = req.body || {};
   if (!isbn && !setIsbn && !title && !author && !publisher && !startDate) {
     return res.status(400).json({ error: 'isbn, setIsbn, title, author, publisher, startDate 중 최소 1개는 필요합니다.' });
   }
@@ -35,6 +35,8 @@ module.exports = async function handler(req, res) {
   if (publisher) params.set('publisher', publisher);
   if (startDate) params.set('start_publish_date', startDate);
   if (endDate) params.set('end_publish_date', endDate);
+  if (sort) params.set('sort', sort); // 예: INPUT_DATE, PUBLISH_PREDATE
+  if (orderBy) params.set('order_by', orderBy); // ASC | DESC
 
   try {
     const url = `https://www.nl.go.kr/seoji/SearchApi.do?${params.toString()}`;
