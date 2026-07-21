@@ -8,6 +8,7 @@
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
   <script src="hwpx_base_template.js"></script>
+  <script src="annual_schedule_data.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <style>
     :root {
@@ -2585,6 +2586,12 @@ ${leafListStr}
 ${ROUTE_BLOCK_GUIDE(idListStr)}
 ${extra}
 
+## chief-coordinator 계획·실적 조회 대응
+- "[chief-coordinator 요청]"으로 시작하는 메시지는 최고관리자가 아닌 상위 오케스트레이터의 조회입니다. request_type이 plan_request면 scope(monthly/weekly/event)와 target_period에 해당하는 도메인 계획을, event_result_request면 해당 행사 범위의 실적을 응답합니다.
+- weekly는 해당 주에 실제 걸리는 업무만, monthly는 그 달 예정 업무 전체를 다룹니다. 지시문에 명시된 업무명이 있으면 그 업무들을 우선 다룹니다.
+- 새 계획을 창작하지 말고 리프가 보유한 계획·실적을 취합·요약합니다. 해당 없으면 "해당 없음: (사유)"로 응답합니다 — 오류가 아닙니다.
+- 이 경로에서는 최고관리자에게 직접 질문하지 않습니다 — 판단 필요 사안은 escalations 블록으로만 올립니다(위임 실행 모드 추가 규칙 참조).
+
 ## 원칙
 - 리프 위임 여부와 무관하게, 최종 산출물(공문서 발송·예산 집행·실제 리프 업무 수행)에 대한 사서 확인은 각 리프 에이전트 자신의 원칙을 따릅니다 — ${code}는 "어디로 보낼지"만 판단합니다
 - 모든 응답은 한국어로 작성합니다`;
@@ -2841,39 +2848,230 @@ ${extra}
       return { targets, note: typeof parsed.note === "string" ? parsed.note : "" };
     };
 
-    // ── 총괄 지시: 입력 중인 지시문에 맞는 에이전트 추천 ────────────
-    // 사서가 홈 콘솔에 지시문을 입력하면, 어떤 에이전트(리프 또는 도메인)로 보내면 좋을지
-    // 모델이 판단해 "추천"만 한다 — 자동으로 선택하거나 이동시키지 않고, 사서가 칩을 눌러
-    // 직접 선택할 때만 "받는 에이전트"에 추가된다(오분류 시에도 항상 사서 확인·수동 선택이 최종).
-    const ORCHESTRATION_RECOMMENDABLE_AGENTS = DOMAINS.filter(d => !d.comingSoon).flatMap(d => d.agents);
-    const ORCHESTRATION_RECOMMENDABLE_IDS = new Set(ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => a.id));
-    const ORCHESTRATION_RECOMMEND_SYSTEM_PROMPT = `당신은 LibrarAI 총괄 지시 콘솔의 라우팅 도우미입니다. 사서가 입력한 지시문을 분석해, 아래 에이전트 목록 중 이 지시를 처리하기에 가장 적합한 에이전트를 최대 3개까지 추천하십시오.
+    // ── 연간 업무 스케줄 헬퍼 (annual_schedule_data.js 로드 데이터 기반) ──
+    // chief-coordinator의 "0단계 스케줄 인지"용: 88행 원문을 프롬프트에 넣지 않고,
+    // 대상 기간에 걸리는 업무만 담당 매핑과 함께 발췌해 주입한다.
+    const SCHEDULE_ROWS = typeof ANNUAL_SCHEDULE_ROWS !== "undefined" ? ANNUAL_SCHEDULE_ROWS : [];
+    const SCHEDULE_TASK_MAP = typeof TASK_AGENT_MAP !== "undefined" ? TASK_AGENT_MAP : {};
+    const DM_LABELS = {
+      "dm01-collection-domain": "DM-01 장서",
+      "dm02-patron-domain": "DM-02 이용자",
+      "dm03-reading-culture-domain": "DM-03 독서문화",
+      "dm04-lifelong-learning-domain": "DM-04 평생학습",
+      "dm05-pr-partnership-domain": "DM-05 홍보협력",
+      "a03-budget-management": "A-03 예산",
+      "chief": "chief-coordinator 직접",
+    };
+    const scheduleTasks = (() => {
+      const byName = new Map();
+      SCHEDULE_ROWS.forEach(r => {
+        if (!byName.has(r.taskName)) byName.set(r.taskName, { taskName: r.taskName, taskType: r.taskType, cycle: r.cycle, timings: [] });
+        if (r.timing) byName.get(r.taskName).timings.push(r.timing);
+      });
+      return [...byName.values()];
+    })();
+    const SCHEDULE_IRREGULAR_RE = /비정기|수시|상이/;
+    // "11월"이 1월에 걸리지 않도록 앞이 숫자가 아닌 경우만 매칭
+    const taskMatchesMonth = (task, m) => {
+      const texts = [task.cycle, ...task.timings];
+      for (const t of texts) {
+        for (const rm of t.matchAll(/(\d{1,2})\s*~\s*(\d{1,2})월/g)) {
+          if (+rm[1] <= m && m <= +rm[2]) return true;
+        }
+      }
+      if (/매월|매주/.test(task.cycle)) return true;
+      const singleRe = new RegExp(`(^|[^0-9])${m}월`);
+      return texts.some(t => singleRe.test(t.replace(/\d{1,2}\s*~\s*\d{1,2}월/g, "")));
+    };
+    // "해당월 전월/분기의 전월" 준비 업무: 다음 달이 실행 월이면 이번 달이 준비 기간
+    const taskPrepForMonth = (task, m) =>
+      !/매월|매주/.test(task.cycle) && /전월/.test(task.timings.join(" ")) &&
+      taskMatchesMonth(task, m === 12 ? 1 : m + 1);
+    const tasksForMonth = (m) => {
+      const active = [], reference = [];
+      scheduleTasks.forEach(task => {
+        if (SCHEDULE_IRREGULAR_RE.test(task.cycle)) {
+          if (taskMatchesMonth(task, m)) active.push({ task, why: "일정에 해당 월 명시" });
+          else reference.push(task);
+        } else if (taskMatchesMonth(task, m)) {
+          active.push({ task, why: null });
+        } else if (taskPrepForMonth(task, m)) {
+          active.push({ task, why: "익월 실행분 준비(전월 진행)" });
+        }
+      });
+      return { active, reference };
+    };
+    const isoWeekInfo = (d = new Date()) => {
+      const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      const day = date.getUTCDay() || 7;
+      date.setUTCDate(date.getUTCDate() + 4 - day);
+      const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+      const week = Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
+      const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() || 7) - 1));
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+      const fmt = (x) => `${x.getMonth() + 1}/${x.getDate()}`;
+      return { label: `${date.getUTCFullYear()}-W${String(week).padStart(2, "0")}`, range: `${fmt(mon)}~${fmt(sun)}` };
+    };
+    const buildChiefScheduleContext = (now = new Date()) => {
+      const m = now.getMonth() + 1;
+      const nextM = m === 12 ? 1 : m + 1;
+      const week = isoWeekInfo(now);
+      const lineFor = ({ task, why }) => {
+        const map = SCHEDULE_TASK_MAP[task.taskName] || {};
+        const owners = (map.owners || []).map(o => DM_LABELS[o] || o).join(" + ") || "담당 미지정(키워드 라우팅으로 판단)";
+        const hint = map.leafHint ? ` [리프: ${map.leafHint}]` : "";
+        const note = map.note ? ` — ${map.note}` : "";
+        return `- ${task.taskName} (주기: ${task.cycle})${why ? ` (${why})` : ""} → 담당: ${owners}${hint}${note}`;
+      };
+      const cur = tasksForMonth(m), nxt = tasksForMonth(nextM);
+      const weeklyTasks = scheduleTasks.filter(t => /매주/.test(t.cycle));
+      return [
+        `## 연간 업무 스케줄 발췌 (자동 주입 — 오늘: ${now.getFullYear()}. ${m}. ${now.getDate()}., 이번 주: ${week.label}(${week.range}))`,
+        `### 이번 달(${m}월) 예정 업무`,
+        ...(cur.active.length ? cur.active.map(lineFor) : ["- (예정 업무 없음)"]),
+        `### 다음 달(${nextM}월) 예정 업무 (참고 — 이번 달 준비 필요 여부 판단용)`,
+        ...(nxt.active.length ? nxt.active.map(lineFor) : ["- (예정 업무 없음)"]),
+        `### 매주 반복 업무 (주간 계획 핵심 소스)`,
+        ...(weeklyTasks.length ? weeklyTasks.map(t => lineFor({ task: t, why: null })) : ["- (없음)"]),
+        `### 비정기 업무 (참고 — 별도 지시가 있을 때만)`,
+        ...(cur.reference.length ? cur.reference.map(t => lineFor({ task: t, why: null })) : ["- (없음)"]),
+      ].join("\n");
+    };
 
-## 에이전트 목록
-${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.description}`).join("\n")}
+    // ── chief-coordinator (총괄 조정자) — v4 단일 접점 오케스트레이터 ────
+    // 인간 최고관리자는 홈 콘솔에서 chief-coordinator하고만 대화한다. chief가 스스로 담당
+    // DM(들)을 선정해 DISPATCH 블록으로 위임하고, 시스템이 순차 실행·취합한 결과를 다시
+    // 받아 통합 계획서/보고서를 작성한다. (스펙: .claude/agents/chief-coordinator.md v4)
+    const CHIEF_DISPATCHABLE_IDS = [
+      "dm01-collection-domain", "dm02-patron-domain", "dm03-reading-culture-domain",
+      "dm04-lifelong-learning-domain", "dm05-pr-partnership-domain",
+      "a03-budget-management", // ④예산 개요 섹션 실데이터용 — 기존 예산 왕복 기계 재사용
+    ];
+    const CHIEF_DISPATCHABLE_SET = new Set(CHIEF_DISPATCHABLE_IDS);
+    const CHIEF_SYSTEM_PROMPT_CORE = `당신은 LibrarAI 업무 총괄 에이전트(chief-coordinator)입니다. 인간 최고관리자와 도메인 에이전트(DM-01~05)·공통 도구(A-03 예산) 사이의 최상위 오케스트레이터입니다.
 
-## 규칙
-- 지시문이 여러 업무를 포괄하면 관련 에이전트를 최대 3개까지 추천합니다. 특정 리프 하나로 좁혀지지 않고 도메인 전체에 걸친 지시라면 이름에 "도메인"이 포함된 항목을 추천합니다.
-- 반드시 위 목록에 있는 id만 사용하고, 목록에 없는 id를 지어내지 않습니다.
-- 적합한 에이전트가 전혀 없으면 빈 배열을 반환합니다.
-- 설명이나 다른 텍스트 없이, 아래 형식만 정확히 출력하십시오.
+## 단일 접점 원칙 (가장 중요)
+- 최고관리자는 오직 당신하고만 대화합니다. "이번달 업무 계획 제출해줘", "이번 주 업무 계획 제출해줘", "이번달 실적 결과보고 해줘" 같은 러프한 지시, 또는 예정에 없던 새 업무 지시를 받습니다.
+- 담당 DM 선정은 전적으로 당신의 판단입니다. "어느 에이전트가 처리할까요?"라고 되묻지 않습니다 — 모호하면 스스로 판단하고, 정말 불가피할 때만 좁은 확인 질문 1개를 합니다.
+- DM·리프는 최고관리자에게 직접 확인·승인을 요청하지 않습니다. 판단 필요 사안은 하위의 escalations로만 당신에게 올라오며, 당신이 계획서 ⑤절 또는 수시 미니 노트로 재포장해 전달합니다.
 
-===추천===
-{"agents": ["id1", "id2"]}
-===추천끝===`;
-    const RECOMMEND_BLOCK_RE = /===추천===([\s\S]*?)===추천끝===/;
-    const parseOrchestrationRecommendation = (text) => {
-      const m = RECOMMEND_BLOCK_RE.exec(text || "");
+## 0단계 — 스케줄 인지
+시스템 프롬프트 하단에 "연간 업무 스케줄 발췌"가 자동 주입됩니다. 계획서/보고서 지시를 받으면 반드시 이 발췌를 체크리스트로 삼으십시오:
+- 대상 기간에 예정 업무가 있는 DM에는 instruction에 **구체적 업무명을 명시**해 조회합니다.
+- 예정 업무가 없는 DM은 위임 대상에서 제외해도 됩니다(5개 DM 전원에 빈 질문 금지).
+- 담당이 "chief-coordinator 직접"인 업무(주요업무계획수립·월별통계작성·성과지표·도서관발전종합계획 등 기획담당 고유 업무)는 DM에 위임하지 않고 self_tasks에 넣은 뒤 최종 문서에서 직접 작성합니다.
+- 스케줄상 예정 업무가 있는데 DM이 "해당 없음"으로 응답하면, 임의로 판단하지 말고 불일치를 원문 그대로 문서에 남깁니다.
+
+## 라우팅 판단 기준 (스케줄·매핑에 없는 새 업무)
+- 도서·수서·ISBN·복본·자료조직·장서 균형·장서점검 → dm01-collection-domain (DM-01 장서)
+- 이용자·FAQ·키오스크·추천·상호대차·책나래/책바다/택배대출·만족도 → dm02-patron-domain (DM-02 이용자)
+- 독서동아리·행사기획·독서문화 강사공모·순회문고·북큐레이션 → dm03-reading-culture-domain (DM-03 독서문화)
+- 평생학습·강좌·수강생·출결·운영일지·인문학 프로그램 → dm04-lifelong-learning-domain (DM-04 평생학습)
+- 홍보물·협력기관/MOU·공모사업·소식지 → dm05-pr-partnership-domain (DM-05 홍보협력)
+- 예산 조회·집행 현황 → a03-budget-management (A-03 예산)
+- 여러 도메인에 걸치면 분해해 각 DM에 나눠 지시합니다.
+
+## DISPATCH 블록 (위임이 필요한 턴에만)
+하위 조회·지시가 필요하면 응답 본문(최고관리자에게 보일 짧은 안내문: 어느 DM에 무엇을 조회하는지) 뒤에 아래 블록을 정확한 형식으로 붙이십시오. 위임 없이 답할 수 있는 질문(스케줄 문의, 이전 문서 재설명 등)에는 블록을 붙이지 않습니다.
+
+===DISPATCH===
+{"scope": "monthly", "target_period": "2026-08", "targets": [{"agent": "dm01-collection-domain", "instruction": "8월 장서 도메인 월간 계획 조회. 스케줄상 예정 업무: 정기도서수서(8월 실행분), 희망도서수서(매주), 장서현황보고. 리프 보유 계획을 취합해 요약으로 응답하십시오."}], "self_tasks": ["월별통계작성"]}
+===DISPATCH_END===
+
+- scope: "monthly" | "weekly" | "event" | "adhoc" (주간 계획은 target_period를 "2026-W30" 형식으로, 특별 행사는 "event_name" 필드 추가)
+- targets의 agent는 다음 id만 사용: ${CHIEF_DISPATCHABLE_IDS.join(", ")}
+- 리프 에이전트를 직접 지정하지 않습니다 — 어느 리프가 처리할지는 각 DM이 결정합니다.
+- self_tasks: "chief-coordinator 직접" 담당 업무명 배열(없으면 빈 배열).
+
+## 집계 결과 수신 후 (2라운드)
+"[집계 결과 — 시스템 자동 주입]"으로 시작하는 메시지를 받으면 **새 DISPATCH를 내지 말고** 통합 문서를 작성하십시오.
+- 역할 경계: 각 DM이 이미 작성한 요약을 **편집·발췌**만 합니다. 처음부터 새로 쓰거나, 수치를 재계산하거나, escalation 내용을 재판단하지 않습니다(그대로 인용).
+- 오류가 난 DM 섹션은 "수집 실패: (사유)"로 표기하고 나머지로 문서를 완성합니다.
+
+**통합 계획서 골격 (월간/주간 공통):**
+①표지(문서 제목·대상 기간·작성: 기획업무팀 기획담당·작성일) ②요약(각 DM 요약에서 핵심 3~5줄 발췌) ③도메인별 계획 상세(DM-01~05 순, 응답 원문 기반, 계획 없는 도메인은 "해당 없음") ④예산 소요 개요(A-03 데이터 반영 — 주간 계획은 생략 가능) ⑤최고관리자 확인·승인 필요 항목(escalations 원문 인용·취합)
+self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합니다.
+
+**실적 결과보고 골격:** ①표지 ②요약(하위가 이미 판정한 이상 징후는 재계산 없이 ⚠️와 함께 인용) ③도메인별 실적 현황 ④통합 수치 분석(ASCII 차트 — 막대/선형, 축·단위는 한국어: 원, 권, 명, 회) ⑤종합 평가 및 제언 ⑥확인·승인 필요 항목
+
+문서 말미에 "본 문서는 초안이며 최고관리자 검토·확정 전까지 확정본이 아닙니다."를 명시하십시오.
+
+## 확인 필요 미니 노트 (urgent escalation)
+집계 결과에 urgency가 "urgent"인 escalation이 있으면, 최종 응답 **맨 앞에** 항목당 1개씩 아래 블록을 출력하십시오(3~5줄, 내용은 하위 보고 원문 인용만 — 재판단 금지). 정식 기안문이 아니므로 hwpx 언급 없이 텍스트로만 씁니다.
+
+===확인필요===
+- 항목: (item 원문) (출처: DM-XX / 리프)
+- 사유: (DM이 보고한 사유 인용)
+- 요청 판단: (최고관리자가 결정할 사항)
+===확인필요끝===
+
+## 어조·기관 컨텍스트
+- 공문서체 한국어. 금액은 ₩·콤마 표기. 연간 예산 총 1억원(평생학습 강사료 1,500만원·교재비 300만원, 강사료 10만원/회차). 강의실: 1강의실(성인 20명), 2·3강의실(어린이 각 10명).
+- 희망도서 기준: 1인 3권/월, 절판·외국도서·전자책·5년 초과·5만원 초과 제외. 복본: ISBN 동일 = 복본, 제목+저자 80% 이상 유사 = 상세조사.`;
+    const buildChiefSystemPrompt = () => CHIEF_SYSTEM_PROMPT_CORE + "\n\n" + buildChiefScheduleContext();
+
+    const DISPATCH_BLOCK_RE = /===DISPATCH===([\s\S]*?)===DISPATCH_END===/;
+    const stripDispatchBlock = (text) => text.replace(DISPATCH_BLOCK_RE, "").trim();
+    const parseDispatchBlock = (text) => {
+      const m = DISPATCH_BLOCK_RE.exec(text || "");
+      if (!m) return null;
+      const raw = m[1].trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch { return null; }
+      const scope = ["monthly", "weekly", "event", "adhoc"].includes(parsed.scope) ? parsed.scope : "adhoc";
+      if (!Array.isArray(parsed.targets)) return null;
+      const seen = new Set();
+      const targets = [];
+      parsed.targets.forEach(t => {
+        if (t && typeof t.agent === "string" && CHIEF_DISPATCHABLE_SET.has(t.agent) &&
+            typeof t.instruction === "string" && t.instruction.trim() && !seen.has(t.agent)) {
+          seen.add(t.agent);
+          targets.push({ agent: t.agent, instruction: t.instruction.trim() });
+        }
+      });
+      if (targets.length === 0) return null;
+      return {
+        scope,
+        target_period: typeof parsed.target_period === "string" ? parsed.target_period : null,
+        event_name: typeof parsed.event_name === "string" ? parsed.event_name : null,
+        targets: targets.slice(0, 6),
+        self_tasks: Array.isArray(parsed.self_tasks) ? parsed.self_tasks.filter(s => typeof s === "string") : [],
+      };
+    };
+
+    // DM/A-03 → chief: 판단 필요 사안 버블업 블록 (v4 FN-08)
+    const ESCALATIONS_BLOCK_RE = /===ESCALATIONS===([\s\S]*?)===ESCALATIONS_END===/;
+    const stripEscalationsBlock = (text) => text.replace(ESCALATIONS_BLOCK_RE, "").trim();
+    const parseEscalationsBlock = (text) => {
+      const m = ESCALATIONS_BLOCK_RE.exec(text || "");
       if (!m) return [];
       const raw = m[1].trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
       let parsed;
       try { parsed = JSON.parse(raw); } catch { return []; }
-      if (!Array.isArray(parsed.agents)) return [];
-      const ids = [];
-      parsed.agents.forEach(id => {
-        if (typeof id === "string" && ORCHESTRATION_RECOMMENDABLE_IDS.has(id) && !ids.includes(id)) ids.push(id);
-      });
-      return ids.slice(0, 3);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter(e => e && typeof e.item === "string" && e.item.trim())
+        .map(e => ({
+          item: e.item.trim(),
+          urgency: e.urgency === "urgent" ? "urgent" : "normal",
+          source_leaf: typeof e.source_leaf === "string" ? e.source_leaf : null,
+        }));
+    };
+
+    // chief → 최고관리자: 수시 "확인 필요" 미니 노트 — 저장은 원문 그대로, 렌더 시 분리
+    const CONFIRM_NOTE_RE = /===확인필요===([\s\S]*?)===확인필요끝===/g;
+    // 어시스턴트 응답에서 확인필요 미니 노트를 떼어내 { notes:[본문...], body:"나머지" }로 반환.
+    const splitConfirmNotes = (text) => {
+      const src = text || "";
+      const notes = [];
+      let m;
+      CONFIRM_NOTE_RE.lastIndex = 0;
+      while ((m = CONFIRM_NOTE_RE.exec(src)) !== null) {
+        const body = m[1].trim();
+        if (body) notes.push(body);
+      }
+      const body = src.replace(CONFIRM_NOTE_RE, "").replace(/\n{3,}/g, "\n\n").trim();
+      return { notes, body };
     };
 
     // ── B-03: 실제 DB 조회 요청 블록 파싱 ──────────────────────────
@@ -3383,6 +3581,25 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
   지금까지의 맥락과 답변을 반영해 원래 진행하던 워크플로우를 이어서 계속하십시오.
 `;
 
+    // chief-coordinator 디스패치로 호출되는 DM·A-03·리프 공통 접미사.
+    // ORCHESTRATION_HITL_SUFFIX와 달리 사람에게 묻는 ⚠ 일시정지를 쓰지 않는다 —
+    // 판단 필요 사안은 escalations 블록으로 구조화해 chief에게만 올린다(v4 단일 접점 원칙).
+    const CHIEF_DISPATCH_SUFFIX = `
+
+---
+## chief-coordinator 위임 실행 모드 — 추가 규칙
+- 이 요청은 최고관리자가 아니라 상위 오케스트레이터(chief-coordinator)가 보낸 것입니다.
+  어떤 경우에도 사서/최고관리자에게 직접 질문·확인·승인을 요청하지 마십시오.
+- 판단·확인이 필요한 사안은 질문 대신 응답 끝에 아래 블록으로 담으십시오(해당 없으면 블록 생략):
+===ESCALATIONS===
+[{"item": "판단 필요 사안 요약", "urgency": "normal", "source_leaf": "리프 id 또는 null"}]
+===ESCALATIONS_END===
+  urgency는 즉시 사람 판단이 필요한 긴급 건만 "urgent", 나머지는 "normal"입니다.
+- 응답 본문은 chief-coordinator가 통합 문서에 그대로 인용할 수 있는 완결된 한국어 요약으로
+  작성하십시오. 해당 계획/실적이 없으면 "해당 없음: (사유)"라고 명시하십시오 — 오류가 아닙니다.
+- hwpx 문서 생성 여부를 묻지 말고 텍스트로만 응답하십시오(문서화는 chief-coordinator 단계에서 결정).
+`;
+
     // ── App ───────────────────────────────────────────────────────
     function App() {
       const PLANNER_INIT = "안녕하세요! 월별 행사 기획 전문 AI입니다.\n\n기획할 월을 알려주시거나, 좌측의 월 버튼을 눌러 바로 시작하세요.\n\n예시:\n- \"7월 행사를 기획해주세요\"\n- \"어린이 위주로 4개 행사만 기획해줘\"\n- \"주제는 환경으로 바로 기획해줘\"";
@@ -3409,12 +3626,6 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
           return [];
         }
       });
-      const [orchestrationText, setOrchestrationText] = useState("");
-      const [orchestrationAgents, setOrchestrationAgents] = useState([]);
-      const [agentPickerOpen, setAgentPickerOpen] = useState(false);
-      const [orchestrationSuggestions, setOrchestrationSuggestions] = useState([]); // 추천 에이전트 id 목록(자동 선택 아님)
-      const [orchestrationSuggestLoading, setOrchestrationSuggestLoading] = useState(false);
-      const orchestrationSuggestReqRef = useRef(0); // 디바운스 중 더 최신 요청이 들어오면 이전 응답을 무시하기 위한 카운터
       const [expandedStep, setExpandedStep] = useState(null); // "planId:stepIndex"
       const [replyDrafts, setReplyDrafts] = useState({}); // "planId:stepIndex" → 입력 중인 답변 텍스트
       const [revisingStep, setRevisingStep] = useState(null); // "planId:stepIndex" — 완료된 단계에 수정 요청 입력창을 열어둔 상태
@@ -3464,7 +3675,34 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
       // tab id -> { targets, idx, note, originalInstruction, leafMessages, prevTargetId, prevReply } | undefined(완료/미진행)
       const [dmChains, setDmChains] = useState({});
 
+      // ── chief-coordinator 채팅 상태 (홈 총괄 지시 콘솔, v4 단일 접점) ──
+      const CHIEF_INIT = "안녕하세요! 업무 총괄 에이전트(chief-coordinator)입니다.\n\n담당 에이전트 선정은 제가 판단합니다 — 지시만 내려주시면 관련 도메인 에이전트에 위임하고, 결과를 취합해 하나의 문서로 보고드립니다. 하위 에이전트의 확인·승인 필요 사안도 제 계획서/보고서와 수시 미니 노트를 통해서만 전달됩니다.\n\n**예시 지시:**\n- \"이번달 업무 계획 제출해줘\"\n- \"이번 주 업무 계획 제출해줘\"\n- \"이번달 실적 결과보고 해줘\"\n- 예정에 없던 업무도 그대로 지시하시면 됩니다.";
+      const [savedChiefState] = useState(() => {
+        try {
+          const parsed = JSON.parse(localStorage.getItem("librarai_chief_state")) || {};
+          if (Array.isArray(parsed.chiefMsgs)) parsed.chiefMsgs = clearStreamingFlags(parsed.chiefMsgs);
+          if (parsed.chiefRuns) {
+            // 새로고침으로 실행 중이던 run은 이어갈 프로세스가 없으므로 "중단됨"으로 강등한다.
+            Object.values(parsed.chiefRuns).forEach(run => {
+              if (["running", "collecting", "compiling"].includes(run.status)) run.status = "interrupted";
+              (run.dispatches || []).forEach(d => { if (d.status === "running") d.status = "error"; });
+            });
+          }
+          return parsed;
+        } catch { return {}; }
+      });
+      const [chiefMsgs, setChiefMsgs] = useState(savedChiefState.chiefMsgs || [{ role: "assistant", content: CHIEF_INIT }]);
+      // runId -> { status, scope, target_period, event_name, self_tasks, dispatches: [{agent, instruction, status, resultText, escalations, leafSteps}] }
+      const [chiefRuns, setChiefRuns] = useState(savedChiefState.chiefRuns || {});
+      const [chiefLoading, setChiefLoading] = useState(false);
+      const [chiefInput, setChiefInput] = useState("");
+      const chiefCancelRef = useRef(false);      // "중단" 버튼 — 순차 단계 사이에서 검사
+      const chiefAbortRef = useRef(null);        // 진행 중 스트림까지 끊는 AbortController
+      const [expandedDispatch, setExpandedDispatch] = useState(null); // "runId:idx" — 진행 패널 결과 전문 펼침
+
       const bottomRef   = useRef(null);
+      const chiefBottomRef = useRef(null); // 총괄 채팅(홈) 하단 앵커 — 새 메시지·진행 갱신 시 스크롤
+      const chiefInputRef = useRef(null);  // 총괄 채팅 입력창 — 자동 높이 조절
       const textareaRef = useRef(null);
       const stepInputRefs = useRef({}); // "planId:stepIndex" 등 draftKey → 계획 화면 답변용 textarea DOM 노드
 
@@ -3525,69 +3763,6 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
 
       const selectedPlan = plans.find(p => p.id === selectedPlanId);
 
-      // ── 총괄 지시(오케스트레이션) ──
-      const toggleOrchestrationAgent = (id) => {
-        setOrchestrationAgents(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
-      };
-
-      // 추천 칩은 토글이 아니라 "선택"이다 — "+추가" 피커를 열지 않고 클릭 한 번으로 바로 받는 에이전트에 들어간다.
-      const pickOrchestrationSuggestion = (id) => {
-        setOrchestrationAgents(prev => prev.includes(id) ? prev : [...prev, id]);
-      };
-
-      // 지시문 입력이 멎으면(700ms) 추천 에이전트를 조회한다 — 결과는 칩으로만 보여주고 자동으로
-      // "받는 에이전트"에 넣지 않는다(오분류가 나와도 항상 사서의 클릭이 최종 선택).
-      useEffect(() => {
-        const text = orchestrationText.trim();
-        if (text.length < 6) {
-          setOrchestrationSuggestions([]);
-          setOrchestrationSuggestLoading(false);
-          return;
-        }
-        const reqId = ++orchestrationSuggestReqRef.current;
-        const timer = setTimeout(async () => {
-          setOrchestrationSuggestLoading(true);
-          try {
-            const reply = await requestApi([
-              { role: "system", content: ORCHESTRATION_RECOMMEND_SYSTEM_PROMPT },
-              { role: "user", content: text },
-            ], 0);
-            if (orchestrationSuggestReqRef.current === reqId) setOrchestrationSuggestions(parseOrchestrationRecommendation(reply));
-          } catch (e) {
-            if (orchestrationSuggestReqRef.current === reqId) setOrchestrationSuggestions([]);
-          } finally {
-            if (orchestrationSuggestReqRef.current === reqId) setOrchestrationSuggestLoading(false);
-          }
-        }, 700);
-        return () => clearTimeout(timer);
-      }, [orchestrationText]);
-
-      const submitOrchestration = () => {
-        const text = orchestrationText.trim();
-        if (!text || orchestrationAgents.length === 0) return;
-        const plan = {
-          id: "plan-" + Date.now(),
-          title: text.length > 26 ? text.slice(0, 26) + "…" : text,
-          command: text,
-          createdAt: new Date().toISOString(),
-          status: "running",
-          steps: orchestrationAgents.map((agentId, i) => ({
-            agentId,
-            label: nameFor(agentId),
-            status: i === 0 ? "running" : "pending",
-            summary: i === 0 ? "실행 준비 중…" : "이전 단계 완료 후 자동 시작",
-            result: null,
-            isError: false,
-            messages: [], // 이 단계 전용 대화 이력 — 러너가 채워 넣는다
-          })),
-        };
-        setPlans(prev => [plan, ...prev]);
-        setOrchestrationText("");
-        setOrchestrationAgents([]);
-        setAgentPickerOpen(false);
-        goPlan(plan.id);
-      };
-
       const deletePlan = (planId) => {
         if (!window.confirm("이 작업(채팅)을 삭제하시겠습니까? 되돌릴 수 없습니다.")) return;
         setPlans(prev => prev.filter(p => p.id !== planId));
@@ -3605,6 +3780,11 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
       }, [messages, loading]);
 
+      // 총괄 채팅(홈)도 새 메시지·진행 패널 갱신마다 하단으로 스크롤한다.
+      useEffect(() => {
+        if (mainView === "home") chiefBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, [chiefMsgs, chiefRuns, chiefLoading, mainView]);
+
       // 입력창 자동 높이 조절 — rows=1 고정 높이에 flex:1만 걸려 있으면 줄바꿈된 내용이
       // 옆으로 밀리거나 잘려 보인다. 입력 내용에 맞춰 최대 120px까지 늘렸다가 그 이상은 스크롤한다.
       useEffect(() => {
@@ -3613,6 +3793,13 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
         el.style.height = "auto";
         el.style.height = Math.min(el.scrollHeight, 120) + "px";
       }, [input]);
+
+      useEffect(() => {
+        const el = chiefInputRef.current;
+        if (!el) return;
+        el.style.height = "auto";
+        el.style.height = Math.min(el.scrollHeight, 120) + "px";
+      }, [chiefInput]);
 
       // ── API ──
       // overrides.model / overrides.plugins로 사이드바 선택 모델·OpenRouter 플러그인(예: 웹 검색)을 개별 호출 단위로 바꿀 수 있다.
@@ -3623,8 +3810,10 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ model: overrides.model || DEFAULT_CHAT_MODEL, max_tokens: 8000, temperature, messages: apiMessages, ...(overrides.plugins ? { plugins: overrides.plugins } : {}) }),
+            ...(overrides.signal ? { signal: overrides.signal } : {}),
           });
         } catch (e) {
+          if (e && e.name === "AbortError") throw e;
           throw new Error("서버에 연결할 수 없습니다. 네트워크를 확인해주세요.");
         }
         const contentType = res.headers.get("content-type") || "";
@@ -3956,7 +4145,7 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
         return result;
       };
 
-      const callApi = async (prompt, msgs, onChunk) => {
+      const callApi = async (prompt, msgs, onChunk, opts = {}) => {
         const isPrRequest = prompt.startsWith(PR_SYSTEM_PROMPT);
         const isB01Request = prompt.startsWith(B01_SYSTEM_PROMPT);
         // 2026-07-10: OpenRouter native 웹서치(google/gemini-3.5-flash) 테스트 결과 검색당 12회 반복 호출로
@@ -3967,7 +4156,7 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
           { role: "system", content: prompt },
           ...msgs.map(m => ({ role: m.role, content: m.content })),
         ];
-        let reply = await requestApi(apiMessages, isPrRequest ? 0.2 : 0.7, { onChunk });
+        let reply = await requestApi(apiMessages, isPrRequest ? 0.2 : 0.7, { onChunk, ...opts });
         const hasBrokenKorean = /[㐀-䶿一-鿿豈-﫿�]/.test(reply);
         if (isPrRequest && hasBrokenKorean) {
           reply = await requestApi([
@@ -4104,6 +4293,11 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
         } catch {}
       }, [bAgentMsgs, plannerMsgs, clubMsgs, llPlannerMsgs, llRecruiterMsgs, llStudentRecruiterMsgs, llOperationLogMsgs, llResultReporterMsgs, d03Msgs, d06Msgs, tabActivity]);
 
+      // chief 채팅·실행 기록도 localStorage에 보존 — 새로고침 시 진행 중 run은 복원 단계에서 "중단됨"으로 강등된다
+      useEffect(() => {
+        try { localStorage.setItem("librarai_chief_state", JSON.stringify({ chiefMsgs, chiefRuns })); } catch {}
+      }, [chiefMsgs, chiefRuns]);
+
       // 사서가 "확인 필요" 단계를 승인 → 완료 처리하고 다음 단계를 시작
       const approveStep = (planId, stepIndex) => {
         setPlans(prev => prev.map(p => {
@@ -4158,6 +4352,44 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
       // 같은 규칙(⚠ 있으면 정지, 없으면 다음 리프로 자동 진행)을 별도 plans/단계 UI 없이 그 DM 탭 자신의 대화창에서 재현한다.
       // 각 리프 턴은 bAgentMsgs[tab]에 agentId를 붙여 별도 말풍선으로 쌓이고, ⚠로 멈추면 dmChains[tab]에 진행 상태를 남겨
       // 사서의 다음 메시지가 그 리프와의 대화를 이어가도록 한다.
+      // ── 리프 실데이터 사이드이펙트 공용 처리 ─────────────────────────
+      // targetId의 응답(reply)에 실데이터 조회 블록이 있으면 프록시 API 왕복 후 최종 응답으로 치환한다.
+      // runDmChain / sendMessage / chief 디스패치 러너 세 경로가 공유한다.
+      // prompt에는 호출 경로별 접미사(ORCHESTRATION_HITL_SUFFIX 등)가 이미 포함된 상태로 받는다.
+      const resolveLeafSideEffects = async (targetId, prompt, msgs, reply) => {
+        const roundTrip = async (label, req, runner) => {
+          let followUpContent;
+          try {
+            const result = await runner(req);
+            followUpContent = `[${label} 결과]\n${JSON.stringify(result)}`;
+          } catch (e) {
+            followUpContent = `[${label} 실패: ${e.message}]`;
+          }
+          return callApi(prompt, [...msgs, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
+        };
+        if (targetId === "b03-duplicate") {
+          const dbReq = parseDbQueryBlock(reply);
+          if (dbReq) reply = await roundTrip("DB 조회", dbReq, runBooksQuery);
+        }
+        if (targetId === "a03-budget-management" && parseBudgetQueryBlock(reply)) {
+          reply = await resolveBudgetReply(prompt, msgs, reply);
+        }
+        if (targetId === "planner") {
+          const shoppingReq = parseShoppingQueryBlock(reply);
+          if (shoppingReq) reply = await roundTrip("네이버 쇼핑 조회", shoppingReq, runShoppingQuery);
+        }
+        if (targetId === "b02-wishlist") {
+          const seojiReq = parseSeojiFormatQueryBlock(reply);
+          if (seojiReq) reply = await roundTrip("SEOJI 포맷 조회", seojiReq, runB02SeojiFormatQuery);
+        }
+        if (targetId === "b01-acquisition") {
+          reply = verifyB01ExcelIsbns(reply, extractKnownB01Isbns(msgs));
+        }
+        return reply;
+      };
+      // B-01 최초 실행 시 SEOJI 신간 후보 수집 결과를 사용자 메시지에 붙이는 공용 헬퍼
+      const b01CandidatesBlock = async () => formatB01SeojiBlock(await fetchB01SeojiCandidates());
+
       const runDmChain = async (tab, initialState) => {
         let state = initialState;
         while (state.idx < state.targets.length) {
@@ -4173,64 +4405,17 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
             // SEOJI 신간 후보 수집을 자동으로 먼저 실행해 결과를 붙여준다 — 그래야 B-01이
             // "수집 결과를 달라"고 되묻지 않고 곧바로 목록 작성을 시작한다.
             if (targetId === "b01-acquisition") {
-              const candidates = await fetchB01SeojiCandidates();
-              userMsg += formatB01SeojiBlock(candidates);
+              userMsg += await b01CandidatesBlock();
             }
             leafMessages = [{ role: "user", content: userMsg }];
           }
           let reply;
           try {
-            reply = await callApi(systemPromptFor(targetId) + ORCHESTRATION_HITL_SUFFIX, leafMessages);
-            // B-03이 DM 위임 경로로 호출된 경우도 직접 탭 대화와 동일하게 실제 DB 조회를 수행한다.
-            if (targetId === "b03-duplicate") {
-              const dbReq = parseDbQueryBlock(reply);
-              if (dbReq) {
-                let followUpContent;
-                try {
-                  const result = await runBooksQuery(dbReq);
-                  followUpContent = `[DB 조회 결과]\n${JSON.stringify(result)}`;
-                } catch (e) {
-                  followUpContent = `[DB 조회 실패: ${e.message}]`;
-                }
-                reply = await callApi(systemPromptFor(targetId) + ORCHESTRATION_HITL_SUFFIX, [...leafMessages, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
-              }
-            }
-            // A-03이 DM 위임 경로로 호출된 경우도 직접 탭 대화와 동일하게 실제 예산 조회·집행을 수행한다.
-            if (targetId === "a03-budget-management" && parseBudgetQueryBlock(reply)) {
-              reply = await resolveBudgetReply(systemPromptFor(targetId) + ORCHESTRATION_HITL_SUFFIX, leafMessages, reply);
-            }
-            // D-02(planner)가 DM 위임 경로로 호출된 경우도 직접 탭 대화와 동일하게 실제 네이버 쇼핑 검색을 수행한다.
-            if (targetId === "planner") {
-              const shoppingReq = parseShoppingQueryBlock(reply);
-              if (shoppingReq) {
-                let followUpContent;
-                try {
-                  const result = await runShoppingQuery(shoppingReq);
-                  followUpContent = `[네이버 쇼핑 조회 결과]\n${JSON.stringify(result)}`;
-                } catch (e) {
-                  followUpContent = `[네이버 쇼핑 조회 실패: ${e.message}]`;
-                }
-                reply = await callApi(systemPromptFor(targetId) + ORCHESTRATION_HITL_SUFFIX, [...leafMessages, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
-              }
-            }
-            // B-01이 DM 위임 경로로 호출된 경우도 직접 탭 대화와 동일하게 엑셀 ISBN 검증 가드를 적용한다.
-            if (targetId === "b01-acquisition") {
-              reply = verifyB01ExcelIsbns(reply, extractKnownB01Isbns(leafMessages));
-            }
-            // B-02가 DM 위임 경로로 호출된 경우도 직접 탭 대화와 동일하게 SEOJI 포맷 조회를 수행한다.
-            if (targetId === "b02-wishlist") {
-              const seojiReq = parseSeojiFormatQueryBlock(reply);
-              if (seojiReq) {
-                let followUpContent;
-                try {
-                  const result = await runB02SeojiFormatQuery(seojiReq);
-                  followUpContent = `[SEOJI 포맷 조회 결과]\n${JSON.stringify(result)}`;
-                } catch (e) {
-                  followUpContent = `[SEOJI 포맷 조회 실패: ${e.message}]`;
-                }
-                reply = await callApi(systemPromptFor(targetId) + ORCHESTRATION_HITL_SUFFIX, [...leafMessages, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
-              }
-            }
+            const leafPrompt = systemPromptFor(targetId) + ORCHESTRATION_HITL_SUFFIX;
+            reply = await callApi(leafPrompt, leafMessages);
+            // DM 위임 경로도 직접 탭 대화와 동일하게 실데이터 조회·검증(B-03 DB, A-03 예산,
+            // D-02 쇼핑, B-02 SEOJI, B-01 ISBN 가드)을 수행한다.
+            reply = await resolveLeafSideEffects(targetId, leafPrompt, leafMessages, reply);
           } catch (err) {
             setBAgentMsgs(prev => ({ ...prev, [tab]: [...prev[tab], { role: "assistant", content: "오류가 발생했습니다.\n\n" + err.message, agentId: targetId }] }));
             setDmChains(prev => ({ ...prev, [tab]: { ...state, leafMessages } }));
@@ -4244,6 +4429,187 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
           state = { ...state, idx: state.idx + 1, leafMessages: [], prevReply: reply, prevTargetId: targetId };
         }
         setDmChains(prev => { const next = { ...prev }; delete next[tab]; return next; });
+      };
+
+      // ══ chief-coordinator 오케스트레이션 루프 (v4 단일 접점) ══════════
+      // 홈 콘솔의 chief 채팅 1차 턴 → DISPATCH 파싱 → DM/A-03 순차 실행(DM의 ROUTE는
+      // 리프까지 이어서 실행) → 집계 주입 → chief 2차 턴(통합 문서)의 전체 사이클.
+      // 지시 1건당 디스패치 사이클은 1회 — 2차 턴의 재-DISPATCH는 무시한다.
+      const CHIEF_RESULT_CHAR_LIMIT = 6000; // 집계 주입 시 디스패치별 본문 상한(컨텍스트 압박 방지)
+      // API 이력: 진행 패널 앵커(kind:"execution")는 제외, 집계 주입(kind:"aggregate")은 포함
+      const chiefApiHistory = (msgs) => msgs.filter(m => m.kind !== "execution").map(m => ({ role: m.role, content: m.content }));
+
+      // DM이 ROUTE 블록으로 리프에 위임한 경우: runDmChain과 동일한 순차 실행이되
+      // ①진행 상태를 dispatch.leafSteps에 기록 ②⚠에도 멈추지 않음(사람 판단은 escalation으로 구조화)
+      // ③CHIEF_DISPATCH_SUFFIX 사용. 취소 시 null 반환.
+      const runChiefLeafChain = async (run, dIdx, route, instruction, signal, sync) => {
+        const dispatch = run.dispatches[dIdx];
+        dispatch.leafSteps = route.targets.map(t => ({ agentId: t, status: "pending", summary: "" }));
+        sync();
+        const results = [];
+        let prevReply = null, prevTargetId = null;
+        for (let i = 0; i < route.targets.length; i++) {
+          if (chiefCancelRef.current) return null;
+          const targetId = route.targets[i];
+          dispatch.leafSteps[i].status = "running"; sync();
+          let userMsg = `[${nameFor(dispatch.agent)} 위임 사항]\n${route.note || "위 지시를 처리해 주세요."}`;
+          if (prevReply) {
+            userMsg += `\n\n[이전 단계 처리 요약 — ${nameFor(prevTargetId)}]\n${summarizeReply(prevReply)}`;
+          }
+          userMsg += `\n\n원본 지시: ${instruction}`;
+          if (targetId === "b01-acquisition") {
+            userMsg += await b01CandidatesBlock();
+          }
+          const leafMessages = [{ role: "user", content: userMsg }];
+          try {
+            const leafPrompt = systemPromptFor(targetId) + CHIEF_DISPATCH_SUFFIX;
+            let reply = await callApi(leafPrompt, leafMessages, undefined, { signal });
+            reply = await resolveLeafSideEffects(targetId, leafPrompt, leafMessages, reply);
+            results.push({ targetId, reply });
+            dispatch.leafSteps[i] = { agentId: targetId, status: "done", summary: summarizeReply(reply) };
+            prevReply = reply; prevTargetId = targetId;
+          } catch (err) {
+            if (err && err.name === "AbortError") return null;
+            dispatch.leafSteps[i] = { agentId: targetId, status: "error", summary: err.message };
+          }
+          sync();
+        }
+        return results;
+      };
+
+      const cancelChiefRun = () => {
+        chiefCancelRef.current = true;
+        if (chiefAbortRef.current) chiefAbortRef.current.abort();
+      };
+
+      const sendChiefMessage = async (textArg) => {
+        const userText = (textArg !== undefined ? textArg : chiefInput).trim();
+        if (!userText || chiefLoading) return;
+        setChiefInput("");
+        setChiefLoading(true);
+        chiefCancelRef.current = false;
+        const controller = new AbortController();
+        chiefAbortRef.current = controller;
+        const signal = controller.signal;
+        const baseMsgs = [...chiefMsgs, { role: "user", content: userText }];
+        setChiefMsgs(baseMsgs);
+        const stream = makeStreamHandler(setChiefMsgs);
+        let curRun = null, curSync = null; // catch 블록에서 run 상태를 마무리하기 위한 참조
+        try {
+          // ① chief 1차 턴 — 위임 판단
+          const firstReply = await requestApi(
+            [{ role: "system", content: buildChiefSystemPrompt() }, ...chiefApiHistory(baseMsgs)],
+            0.3, { onChunk: stream.onChunk, signal });
+          const dispatchMeta = parseDispatchBlock(firstReply);
+          if (!dispatchMeta) { stream.finalize(firstReply); return; } // 위임 불필요 — 일반 답변
+          const announce = stripDispatchBlock(firstReply) || "관련 도메인 에이전트에 조회를 시작합니다.";
+          stream.finalize(announce);
+
+          // ② run 등록 + 진행 패널 앵커 메시지
+          const runId = "run_" + Date.now();
+          const run = {
+            status: "running",
+            scope: dispatchMeta.scope, target_period: dispatchMeta.target_period, event_name: dispatchMeta.event_name,
+            self_tasks: dispatchMeta.self_tasks,
+            startedAt: new Date().toISOString(),
+            dispatches: dispatchMeta.targets.map(t => ({
+              agent: t.agent, instruction: t.instruction,
+              status: "pending", resultText: "", escalations: [], leafSteps: [],
+            })),
+          };
+          const sync = () => setChiefRuns(prev => ({ ...prev, [runId]: JSON.parse(JSON.stringify(run)) }));
+          curRun = run; curSync = sync;
+          sync();
+          setChiefMsgs(prev => [...prev, { role: "assistant", kind: "execution", runId, content: "" }]);
+
+          // ③ 디스패치 순차 실행 — 오류 난 대상만 error로 표기하고 계속 진행
+          for (let i = 0; i < run.dispatches.length; i++) {
+            if (chiefCancelRef.current) break;
+            const d = run.dispatches[i];
+            d.status = "running"; sync();
+            const reqJson = {
+              requester_agent: "chief-coordinator",
+              request_type: run.scope === "event" ? "event_result_request" : "plan_request",
+              scope: run.scope,
+              ...(run.target_period ? { target_period: run.target_period } : {}),
+              ...(run.event_name ? { event_name: run.event_name } : {}),
+            };
+            const dmMessages = [{ role: "user", content: `[chief-coordinator 요청]\n${JSON.stringify(reqJson)}\n\n[지시 내용]\n${d.instruction}` }];
+            try {
+              const dmPrompt = systemPromptFor(d.agent) + CHIEF_DISPATCH_SUFFIX;
+              let reply = await callApi(dmPrompt, dmMessages, undefined, { signal });
+              reply = await resolveLeafSideEffects(d.agent, dmPrompt, dmMessages, reply);
+              // DM이 리프 위임(ROUTE)을 냈다면 리프까지 실행 후 결과를 DM에 되돌려 최종 요약을 받는다.
+              // 디스패치당 ROUTE 1라운드 상한 — DM 2차 응답의 재-ROUTE는 무시(strip)한다.
+              const route = DM_AGENTS_CONFIG[d.agent] ? parseRouteBlock(reply) : null;
+              if (route) {
+                const leafResults = await runChiefLeafChain(run, i, route, d.instruction, signal, sync);
+                if (leafResults === null) break; // 취소됨
+                if (leafResults.length) {
+                  const followUp = `[리프 처리 결과]\n${leafResults.map(r => `### ${codeFor(r.targetId)} ${nameFor(r.targetId)}\n${summarizeReply(r.reply)}`).join("\n\n")}\n\n위 결과를 반영해 도메인 요약을 최종 확정해 응답하십시오. 추가 위임(ROUTE) 없이 요약과 필요 시 escalations 블록만 응답합니다.`;
+                  reply = await callApi(dmPrompt, [...dmMessages, { role: "assistant", content: stripRouteBlock(reply) }, { role: "user", content: followUp }], undefined, { signal });
+                }
+                reply = stripRouteBlock(reply);
+              }
+              d.escalations = parseEscalationsBlock(reply);
+              d.resultText = stripEscalationsBlock(reply);
+              d.status = "done";
+            } catch (err) {
+              if (err && err.name === "AbortError") break;
+              d.status = "error";
+              d.resultText = "수집 실패: " + err.message;
+            }
+            sync();
+          }
+
+          if (chiefCancelRef.current) {
+            run.status = "cancelled"; sync();
+            setChiefMsgs(prev => [...prev, { role: "assistant", content: "지시 실행을 중단했습니다. 필요하시면 다시 지시해 주세요." }]);
+            return;
+          }
+
+          // ④ 집계 주입 (UI에서는 접힌 형태로 렌더, API 이력에는 포함)
+          run.status = "compiling"; sync();
+          const allEscalations = run.dispatches.flatMap(d => d.escalations.map(e => ({ ...e, source_dm: codeFor(d.agent) })));
+          const aggregate = [
+            "[집계 결과 — 시스템 자동 주입]",
+            ...run.dispatches.map(d => {
+              const body = (d.resultText || "(응답 없음)");
+              const clipped = body.length > CHIEF_RESULT_CHAR_LIMIT ? body.slice(0, CHIEF_RESULT_CHAR_LIMIT) + "\n…(길이 제한으로 이하 생략)" : body;
+              return `### ${codeFor(d.agent)} ${nameFor(d.agent)} (${d.status === "done" ? "완료" : "수집 실패"})\n${clipped}`;
+            }),
+            `### escalations 취합\n${allEscalations.length ? JSON.stringify(allEscalations, null, 1) : "(없음)"}`,
+            `### chief 직접 담당 업무\n${run.self_tasks.length ? run.self_tasks.map(s => `- ${s}`).join("\n") : "(없음)"}`,
+          ].join("\n\n");
+          setChiefMsgs(prev => [...prev, { role: "user", kind: "aggregate", content: aggregate }]);
+
+          // ⑤ chief 2차 턴 — 통합 문서 작성 (스트리밍)
+          const convo = [
+            ...chiefApiHistory(baseMsgs),
+            { role: "assistant", content: announce },
+            { role: "user", content: aggregate },
+          ];
+          const stream2 = makeStreamHandler(setChiefMsgs);
+          let finalReply = await requestApi(
+            [{ role: "system", content: buildChiefSystemPrompt() }, ...convo],
+            0.3, { onChunk: stream2.onChunk, signal });
+          if (DISPATCH_BLOCK_RE.test(finalReply)) {
+            finalReply = stripDispatchBlock(finalReply) + "\n\n(추가 위임이 필요하면 새 지시로 요청해 주세요.)";
+          }
+          stream2.finalize(finalReply);
+          run.status = "done"; sync();
+        } catch (err) {
+          const aborted = (err && err.name === "AbortError") || chiefCancelRef.current;
+          if (curRun && curSync) { curRun.status = aborted ? "cancelled" : "error"; curSync(); }
+          if (aborted) {
+            setChiefMsgs(prev => [...clearStreamingFlags(prev), { role: "assistant", content: "지시 실행을 중단했습니다. 필요하시면 다시 지시해 주세요." }]);
+          } else {
+            setChiefMsgs(prev => [...clearStreamingFlags(prev), { role: "assistant", content: "오류가 발생했습니다.\n\n" + err.message }]);
+          }
+        } finally {
+          chiefAbortRef.current = null;
+          setChiefLoading(false);
+        }
       };
 
       const sendMessage = async (textArg) => {
@@ -4276,8 +4642,7 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
               const alreadyCollected = currentMsgs.some(m => typeof m.content === "string" && m.content.includes("[SEOJI 신간 후보 수집 결과"));
               const wantsRecollect = /재수집|다시\s*(수집|검색|찾)/.test(userText);
               if (!alreadyCollected || wantsRecollect) {
-                const candidates = await fetchB01SeojiCandidates();
-                apiMsgs = newMsgs.slice(0, -1).concat({ role: "user", content: userText + formatB01SeojiBlock(candidates) });
+                apiMsgs = newMsgs.slice(0, -1).concat({ role: "user", content: userText + await b01CandidatesBlock() });
               }
             }
             stream = makeStreamHandler(setter);
@@ -4291,56 +4656,11 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
               if (route) {
                 await runDmChain(tab, { targets: route.targets, idx: 0, note: route.note, originalInstruction: userText, leafMessages: [], prevReply: null, prevTargetId: null });
               }
-            } else if (tab === "b03-duplicate" && parseDbQueryBlock(reply)) {
-              // B-03이 판정 전 실제 DB 조회를 요청했다면(===DB_QUERY===), 화면에는 보여주지 않고
-              // api/books.js를 호출해 결과를 후속 메시지로 넣어 최종 판정 답변을 다시 받는다.
-              const dbReq = parseDbQueryBlock(reply);
-              let followUpContent;
-              try {
-                const result = await runBooksQuery(dbReq);
-                followUpContent = `[DB 조회 결과]\n${JSON.stringify(result)}`;
-              } catch (e) {
-                followUpContent = `[DB 조회 실패: ${e.message}]`;
-              }
-              const finalReply = await callApi(prompt, [...apiMsgs, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
-              stream.finalize(finalReply);
-            } else if (tab === "a03-budget-management" && parseBudgetQueryBlock(reply)) {
-              // A-03이 잔액 조회·매칭·집행 전 실제 예산 DB 조회/기록을 요청했다면(===BUDGET_QUERY===),
-              // 화면에는 보여주지 않고 api/budget.js를 왕복 호출해(조회 → 매칭 확인 → 집행) 최종 답변을 받는다.
-              const finalReply = await resolveBudgetReply(prompt, apiMsgs, reply);
-              stream.finalize(finalReply);
-            } else if (tab === "planner" && parseShoppingQueryBlock(reply)) {
-              // D-02가 준비물·재료 구매 링크를 안내하기 전 실제 네이버 쇼핑 검색을 요청했다면
-              // (===SHOPPING_QUERY===), 화면에는 보여주지 않고 api/naver-shopping.js를 호출해
-              // 결과를 후속 메시지로 넣어 최종 답변을 다시 받는다.
-              const shoppingReq = parseShoppingQueryBlock(reply);
-              let followUpContent;
-              try {
-                const result = await runShoppingQuery(shoppingReq);
-                followUpContent = `[네이버 쇼핑 조회 결과]\n${JSON.stringify(result)}`;
-              } catch (e) {
-                followUpContent = `[네이버 쇼핑 조회 실패: ${e.message}]`;
-              }
-              const finalReply = await callApi(prompt, [...apiMsgs, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
-              stream.finalize(finalReply);
-            } else if (tab === "b01-acquisition") {
-              stream.finalize(verifyB01ExcelIsbns(reply, extractKnownB01Isbns(apiMsgs)));
-            } else if (tab === "b02-wishlist" && parseSeojiFormatQueryBlock(reply)) {
-              // B-02가 R-04(포맷) 반려 기준 판정 전 신청 건의 EBOOK_YN·FORM·FORM_DETAIL을 SEOJI로
-              // 확인 요청했다면(===SEOJI_FORMAT_QUERY===), 화면에는 보여주지 않고 api/seoji.js를
-              // 호출해 결과를 후속 메시지로 넣어 최종 판정 답변을 다시 받는다.
-              const seojiReq = parseSeojiFormatQueryBlock(reply);
-              let followUpContent;
-              try {
-                const result = await runB02SeojiFormatQuery(seojiReq);
-                followUpContent = `[SEOJI 포맷 조회 결과]\n${JSON.stringify(result)}`;
-              } catch (e) {
-                followUpContent = `[SEOJI 포맷 조회 실패: ${e.message}]`;
-              }
-              const finalReply = await callApi(prompt, [...apiMsgs, { role: "assistant", content: reply }, { role: "user", content: followUpContent }]);
-              stream.finalize(finalReply);
             } else {
-              stream.finalize(reply);
+              // 실데이터 조회 블록(B-03 DB, A-03 예산, D-02 쇼핑, B-02 SEOJI)이 있으면 화면에는
+              // 보여주지 않고 프록시 API를 왕복해 최종 답변을 받는다. B-01은 ISBN 검증 가드 적용.
+              const finalReply = await resolveLeafSideEffects(tab, prompt, apiMsgs, reply);
+              stream.finalize(finalReply);
             }
           }
         } catch (err) {
@@ -4643,126 +4963,282 @@ ${ORCHESTRATION_RECOMMENDABLE_AGENTS.map(a => `- ${a.id}: ${a.name} — ${a.desc
         </div>
       );
 
-      // ── 홈: 총괄 지시 콘솔 ──
+      // ── 총괄 진행 패널: chief 디스패치 실행 현황(디스패치·리프·escalation) ──
+      const CHIEF_RUN_STATUS = {
+        running:     { label: "도메인 조회 중",     cls: " is-running" },
+        compiling:   { label: "통합 문서 작성 중",  cls: " is-running" },
+        done:        { label: "완료",               cls: " is-done" },
+        cancelled:   { label: "중단됨",             cls: "" },
+        error:       { label: "오류",               cls: " is-review" },
+        interrupted: { label: "새로고침으로 중단",  cls: " is-review" },
+      };
+      const CHIEF_STEP_STATUS = {
+        pending: { label: "대기",    cls: "" },
+        running: { label: "수집 중", cls: " is-running" },
+        done:    { label: "완료",    cls: " is-done" },
+        error:   { label: "실패",    cls: " is-review" },
+      };
+      const renderChiefRunPanel = (run, runId) => {
+        if (!run) return (
+          <div style={{ border: "1px dashed var(--line-strong)", borderRadius: "var(--radius-card)", padding: "12px 14px", fontSize: "12px", color: "var(--faint)" }}>
+            실행 정보를 불러올 수 없습니다.
+          </div>
+        );
+        const rs = CHIEF_RUN_STATUS[run.status] || { label: run.status, cls: "" };
+        const running = run.status === "running" || run.status === "compiling";
+        const scopeLabel = { monthly: "월간 계획", weekly: "주간 계획", event: "행사 실적", adhoc: "수시 지시" }[run.scope] || run.scope;
+        const periodLabel = run.event_name || run.target_period || "";
+        return (
+          <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius-card)", background: "var(--bg-elevated)", overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "11px 14px", borderBottom: "1px solid var(--line-soft)", background: "var(--bg-sunken)" }}>
+              <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--ink)" }}>실행 현황</span>
+              <span style={{ fontSize: "11.5px", color: "var(--muted)" }}>{scopeLabel}{periodLabel ? " · " + periodLabel : ""}</span>
+              <span className={"status-badge" + rs.cls}>{rs.label}</span>
+              {running && (
+                <button onClick={cancelChiefRun}
+                  style={{ marginLeft: "auto", border: "1px solid var(--line-strong)", background: "var(--surface)", color: "var(--muted)", borderRadius: "var(--radius-pill)", padding: "3px 12px", fontSize: "11.5px", fontWeight: "700", cursor: "pointer", fontFamily: "inherit" }}
+                >■ 중단</button>
+              )}
+            </div>
+            <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: "8px" }}>
+              {run.dispatches.map((d, i) => {
+                const ds = CHIEF_STEP_STATUS[d.status] || { label: d.status, cls: "" };
+                const dispKey = runId + ":" + i;
+                const open = expandedDispatch === dispKey;
+                const hasBody = !!(d.resultText && d.resultText.trim());
+                return (
+                  <div key={i} style={{ border: "1px solid var(--line-soft)", borderRadius: "9px", background: "var(--surface)", padding: "9px 11px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
+                      <span className="code-chip">{codeFor(d.agent)}</span>
+                      <span style={{ fontSize: "12.5px", fontWeight: "600", color: "var(--ink)" }}>{nameFor(d.agent)}</span>
+                      <span className={"status-badge" + ds.cls}>{ds.label}</span>
+                      {d.escalations && d.escalations.length > 0 && (
+                        <span className="status-badge is-review">⚠ 확인 {d.escalations.length}</span>
+                      )}
+                      {hasBody && (
+                        <button onClick={() => setExpandedDispatch(open ? null : dispKey)}
+                          style={{ marginLeft: "auto", border: "none", background: "transparent", color: "var(--accent)", fontSize: "11.5px", fontWeight: "700", cursor: "pointer", fontFamily: "inherit" }}
+                        >{open ? "접기 ▲" : "전문 보기 ▼"}</button>
+                      )}
+                    </div>
+                    <div style={{ fontSize: "11.5px", color: "var(--muted)", marginTop: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: open ? "normal" : "nowrap" }}>{d.instruction}</div>
+                    {d.leafSteps && d.leafSteps.length > 0 && (
+                      <div style={{ marginTop: "7px", paddingLeft: "10px", borderLeft: "2px solid var(--line)", display: "flex", flexDirection: "column", gap: "4px" }}>
+                        {d.leafSteps.map((ls, li) => {
+                          const lss = CHIEF_STEP_STATUS[ls.status] || { label: ls.status, cls: "" };
+                          return (
+                            <div key={li} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span className="code-chip">{codeFor(ls.agentId)}</span>
+                              <span style={{ fontSize: "11.5px", color: "var(--muted)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ls.summary || nameFor(ls.agentId)}</span>
+                              <span className={"status-badge" + lss.cls}>{lss.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {open && hasBody && (
+                      <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid var(--line-soft)", fontSize: "13px", lineHeight: "1.7", color: "var(--ink)" }}>
+                        <MarkdownRenderer text={d.resultText} />
+                        {d.escalations && d.escalations.length > 0 && (
+                          <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "4px" }}>
+                            {d.escalations.map((e, ei) => (
+                              <div key={ei} style={{ fontSize: "11.5px", color: e.urgency === "urgent" ? "var(--warn)" : "var(--muted)" }}>
+                                {e.urgency === "urgent" ? "⚠ 긴급 · " : "· "}{e.item}{e.source_leaf ? ` (${e.source_leaf})` : ""}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {run.self_tasks && run.self_tasks.length > 0 && (
+                <div style={{ border: "1px dashed var(--line-strong)", borderRadius: "9px", padding: "8px 11px", fontSize: "11.5px", color: "var(--muted)" }}>
+                  <span style={{ fontWeight: "700", color: "var(--ink)" }}>chief 직접 처리</span>
+                  <span style={{ marginLeft: "6px" }}>{run.self_tasks.join(" · ")}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      };
+
+      // 어시스턴트 응답의 확인필요 미니 노트를 경고색 카드로, 나머지 본문을 마크다운으로 렌더
+      const renderChiefAssistant = (msg) => {
+        const { notes, body } = splitConfirmNotes(msg.content || "");
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {notes.map((note, ni) => (
+              <div key={"n" + ni} style={{ border: "1px solid var(--warn)", background: "var(--warn-tint)", borderRadius: "10px", padding: "11px 13px" }}>
+                <div style={{ fontSize: "11.5px", fontWeight: "800", color: "var(--warn)", marginBottom: "5px", letterSpacing: "0.3px" }}>⚠ 확인 필요 — 수시 미니 노트</div>
+                <div style={{ fontSize: "13px", lineHeight: "1.65", color: "var(--ink)", whiteSpace: "pre-wrap" }}>{note}</div>
+              </div>
+            ))}
+            {(body || msg.streaming) && (
+              <div style={{ fontSize: "14px", lineHeight: "1.75", color: "var(--ink)", minWidth: 0 }}>
+                <MarkdownRenderer text={body} />
+                {msg.streaming && <span className="stream-cursor">▊</span>}
+              </div>
+            )}
+          </div>
+        );
+      };
+
+      // ── 홈: 총괄 지시 콘솔(chief-coordinator 채팅, v4 단일 접점) ──
       const renderHomeConsole = () => {
-        const allAgents = DOMAINS.filter(d => !d.comingSoon).flatMap(d => d.agents.map(a => ({ ...a, domain: d })));
         const today = new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
+        const isLanding = chiefMsgs.length <= 1; // 초기 인사말만 있는 상태
         // 초기 인사말 외에 실제로 주고받은 대화가 있는 탭만 "진행 중인 대화"로 노출한다.
         const activeSessions = Object.entries(tabActivity)
           .map(([tabId, ts]) => ({ tabId, ts, msgs: getTabMessages(tabId) }))
           .filter(x => x.msgs && x.msgs.length > 1)
           .sort((a, b) => new Date(b.ts) - new Date(a.ts));
+        const quickActions = [
+          ["이번달 업무 계획", "이번달 업무 계획을 제출해줘."],
+          ["이번 주 업무 계획", "이번 주 업무 계획을 제출해줘."],
+          ["이번달 실적 보고", "이번달 업무 실적 결과보고를 해줘."],
+        ];
+        const handleChiefKeyDown = (e) => {
+          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChiefMessage(); }
+        };
         return (
-          <div style={{ flex: 1, overflowY: "auto", padding: "34px 40px 56px" }}>
-            <div style={{ maxWidth: "820px", margin: "0 auto" }}>
-              <div style={{ fontSize: "12.5px", color: "var(--muted)", marginBottom: "8px" }}>{today}</div>
-              <div style={{ fontSize: "23px", fontWeight: "800", letterSpacing: "-0.4px", color: "var(--ink)", marginBottom: "26px" }}>무엇을 처리할까요, 기획담당님?</div>
-
-              <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", boxShadow: "var(--shadow-card)", padding: "18px 20px", marginBottom: "34px" }}>
-                <textarea
-                  value={orchestrationText}
-                  onChange={e => setOrchestrationText(e.target.value)}
-                  placeholder="여러 에이전트에 한 번에 지시할 내용을 입력하세요…"
-                  rows={3}
-                  style={{ width: "100%", border: "none", outline: "none", resize: "none", fontSize: "14.5px", lineHeight: "1.6", fontFamily: "inherit", color: "var(--ink)" }}
-                />
-                <div style={{ borderTop: "1px solid var(--line-soft)", marginTop: "12px", paddingTop: "12px", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
-                  <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--faint)", letterSpacing: "0.4px" }}>받는 에이전트</span>
-                  {orchestrationAgents.map(id => (
-                    <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: "var(--accent-tint)", color: "var(--accent)", fontSize: "11.5px", fontWeight: "700", padding: "4px 8px", borderRadius: "var(--radius-pill)" }}>
-                      {codeFor(id)} {nameFor(id)}
-                      <span onClick={() => toggleOrchestrationAgent(id)} style={{ cursor: "pointer", opacity: 0.7 }}>×</span>
-                    </span>
-                  ))}
-                  <div style={{ position: "relative" }}>
-                    <button onClick={() => setAgentPickerOpen(v => !v)}
-                      style={{ border: "1px dashed var(--line-strong)", background: "none", borderRadius: "var(--radius-pill)", padding: "4px 10px", fontSize: "11.5px", color: "var(--muted)", cursor: "pointer", fontFamily: "inherit" }}
-                    >＋ 추가</button>
-                    {agentPickerOpen && (
-                      <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", boxShadow: "0 8px 24px rgba(32,36,42,0.12)", padding: "8px", maxHeight: "260px", overflowY: "auto", zIndex: 10, width: "240px" }}>
-                        {allAgents.map(a => (
-                          <button key={a.id} onClick={() => { toggleOrchestrationAgent(a.id); setAgentPickerOpen(false); }}
-                            style={{ width: "100%", display: "flex", alignItems: "center", gap: "7px", padding: "6px 8px", border: "none", background: orchestrationAgents.includes(a.id) ? "var(--accent-tint)" : "transparent", borderRadius: "6px", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                            <span className="code-chip">{codeFor(a.id)}</span>
-                            <span style={{ fontSize: "12px", color: "var(--ink)" }}>{a.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <button onClick={submitOrchestration} disabled={!orchestrationText.trim() || orchestrationAgents.length === 0}
-                    style={{ marginLeft: "auto", padding: "8px 16px", background: (!orchestrationText.trim() || orchestrationAgents.length === 0) ? "var(--line-strong)" : "var(--accent)", color: "white", border: "none", borderRadius: "var(--radius-btn)", fontSize: "13px", fontWeight: "700", cursor: (!orchestrationText.trim() || orchestrationAgents.length === 0) ? "not-allowed" : "pointer", fontFamily: "inherit", boxShadow: "0 2px 6px rgba(30,110,92,.25)" }}
-                  >일괄 지시 ↵</button>
-                </div>
-                {(orchestrationSuggestLoading || orchestrationSuggestions.some(id => !orchestrationAgents.includes(id))) && (
-                  <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
-                    <span style={{ fontSize: "11px", color: "var(--faint)" }}>🤖 추천</span>
-                    {orchestrationSuggestLoading ? (
-                      <span style={{ fontSize: "11.5px", color: "var(--faint)" }}>분석 중…</span>
-                    ) : (
-                      orchestrationSuggestions.filter(id => !orchestrationAgents.includes(id)).map(id => (
-                        <button key={id} onClick={() => pickOrchestrationSuggestion(id)}
-                          style={{ display: "inline-flex", alignItems: "center", gap: "5px", border: "1px solid var(--accent)", background: "var(--surface)", color: "var(--accent)", fontSize: "11.5px", fontWeight: "700", padding: "4px 8px", borderRadius: "var(--radius-pill)", cursor: "pointer", fontFamily: "inherit" }}
-                        >{codeFor(id)} {nameFor(id)} +</button>
-                      ))
-                    )}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* 채팅 스레드 */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "30px 40px 20px" }}>
+              <div style={{ maxWidth: "820px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "22px" }}>
+                {isLanding && (
+                  <div>
+                    <div style={{ fontSize: "12.5px", color: "var(--muted)", marginBottom: "8px" }}>{today}</div>
+                    <div style={{ fontSize: "23px", fontWeight: "800", letterSpacing: "-0.4px", color: "var(--ink)" }}>무엇을 처리할까요, 기획담당님?</div>
                   </div>
                 )}
-              </div>
-
-              {plans.length > 0 && (
-                <>
-                  <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1.2px", color: "var(--faint)", marginBottom: "12px" }}>진행 중인 작업 {plans.length}</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "14px", marginBottom: "34px" }}>
-                    {plans.map(plan => {
-                      const hasReview = plan.steps.some(s => s.status === "needs_review");
-                      const allDone = plan.steps.every(s => s.status === "done");
-                      const firstAgent = plan.steps[0] && plan.steps[0].agentId;
-                      return (
-                        <div key={plan.id} onClick={() => goPlan(plan.id)} className="agent-card" role="button" tabIndex={0}
-                          style={{ position: "relative", textAlign: "left", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: "16px", cursor: "pointer", fontFamily: "inherit", transition: "transform 0.15s ease, box-shadow 0.15s ease" }}>
-                          <button onClick={(e) => { e.stopPropagation(); deletePlan(plan.id); }} title="삭제"
-                            style={{ position: "absolute", top: "10px", right: "10px", width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", color: "var(--faint)", cursor: "pointer", fontFamily: "inherit", fontSize: "14px", borderRadius: "50%" }}
-                          >×</button>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px", paddingRight: "20px" }}>
-                            <span className="code-chip is-active">{codeFor(firstAgent)}</span>
-                            <span className={"status-badge" + (hasReview ? " is-review" : allDone ? " is-done" : " is-running")}>{hasReview ? "확인 필요" : allDone ? "완료" : "진행 중"}</span>
-                          </div>
-                          <div style={{ fontSize: "13.5px", fontWeight: "700", color: "var(--ink)", marginBottom: "6px" }}>{plan.title}</div>
-                          <div style={{ fontSize: "12px", color: "var(--muted)" }}>{plan.steps.length}개 에이전트 · {plan.steps.filter(s => s.status === "done").length}/{plan.steps.length} 단계 완료</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
-              <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1.2px", color: "var(--faint)", marginBottom: "12px" }}>진행 중인 대화 {activeSessions.length > 0 ? activeSessions.length : ""}</div>
-              {activeSessions.length === 0 ? (
-                <div style={{ background: "var(--surface)", border: "1px dashed var(--line-strong)", borderRadius: "var(--radius-card)", padding: "16px", fontSize: "12.5px", color: "var(--faint)" }}>
-                  아직 진행 중인 대화가 없습니다. 에이전트 탭에 들어가 대화를 시작하면 여기에 표시됩니다.
-                </div>
-              ) : (
-                <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", overflow: "hidden" }}>
-                  {activeSessions.map((s, i) => {
-                    const lastMsg = [...s.msgs].reverse().find(m => m.role === "assistant") || s.msgs[s.msgs.length - 1];
+                {chiefMsgs.map((msg, i) => {
+                  if (msg.kind === "execution") {
+                    return <div key={i}>{renderChiefRunPanel(chiefRuns[msg.runId], msg.runId)}</div>;
+                  }
+                  if (msg.kind === "aggregate") {
                     return (
-                      <button key={s.tabId} onClick={() => goAgent(s.tabId)}
-                        style={{ width: "100%", display: "flex", alignItems: "center", gap: "10px", padding: "12px 16px", border: "none", borderBottom: i < activeSessions.length - 1 ? "1px solid var(--line-soft)" : "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                        <span className="code-chip">{codeFor(s.tabId)}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--ink)" }}>{nameFor(s.tabId)}</div>
-                          <div style={{ fontSize: "11.5px", color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summarizeReply(lastMsg ? lastMsg.content : "")}</div>
-                        </div>
-                        <span style={{ fontSize: "11px", color: "var(--faint)", flexShrink: 0 }}>{new Date(s.ts).toLocaleString("ko-KR")}</span>
-                        <span onClick={(e) => { e.stopPropagation(); resetCurrent(s.tabId); }} title="완료 처리"
-                          style={{ width: "20px", height: "20px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--faint)", cursor: "pointer", fontSize: "13px", borderRadius: "50%", flexShrink: 0 }}
-                        >×</span>
-                      </button>
+                      <details key={i} style={{ background: "var(--bg-sunken)", border: "1px solid var(--line-soft)", borderRadius: "10px", padding: "8px 12px" }}>
+                        <summary style={{ fontSize: "11.5px", color: "var(--faint)", cursor: "pointer", listStyle: "none", userSelect: "none" }}>집계 결과 (시스템 자동 주입) · 펼치기</summary>
+                        <div style={{ fontSize: "12px", lineHeight: "1.65", color: "var(--muted)", whiteSpace: "pre-wrap", marginTop: "8px" }}>{msg.content}</div>
+                      </details>
                     );
-                  })}
+                  }
+                  if (msg.role === "user") {
+                    return (
+                      <div key={i} style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <div style={{ maxWidth: "78%", padding: "12px 16px", borderRadius: "12px", background: "var(--accent-tint)", color: "#1C3B31", fontSize: "14px", lineHeight: "1.7", whiteSpace: "pre-wrap" }}>{msg.content}</div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={i} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                      <span className="code-chip is-active" style={{ flexShrink: 0, marginTop: "3px" }}>CC</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>{renderChiefAssistant(msg)}</div>
+                    </div>
+                  );
+                })}
+                {chiefLoading && !chiefMsgs.some(m => m.streaming) && (
+                  <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                    <span className="code-chip is-active" style={{ flexShrink: 0 }}>CC</span>
+                    <div style={{ display: "flex", gap: "5px", alignItems: "center" }}>
+                      {[0,1,2].map(n => (
+                        <div key={n} style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent)", opacity: 0.6, animation: "bounce 1.2s infinite", animationDelay: (n * 0.2) + "s" }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div ref={chiefBottomRef} />
+              </div>
+            </div>
+
+            {/* 입력 영역 */}
+            <div style={{ padding: "10px 40px 22px", background: "var(--bg)" }}>
+              <div style={{ maxWidth: "820px", margin: "0 auto" }}>
+                <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", marginBottom: "10px" }}>
+                  {quickActions.map(([label, cmd]) => (
+                    <button key={label} onClick={() => sendChiefMessage(cmd)} disabled={chiefLoading}
+                      style={{ border: "1px solid var(--line)", background: "var(--surface)", color: chiefLoading ? "var(--faint)" : "var(--accent)", borderRadius: "var(--radius-pill)", padding: "6px 13px", fontSize: "12px", fontWeight: "700", cursor: chiefLoading ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+                    >{label}</button>
+                  ))}
+                  {activeSessions.length > 0 && (
+                    <span style={{ marginLeft: "auto" }} />
+                  )}
                 </div>
-              )}
+                <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", background: "var(--surface)", borderRadius: "var(--radius-card)", padding: "10px 10px 10px 16px", border: "1px solid var(--line)", boxShadow: "var(--shadow-card)" }}>
+                  <textarea
+                    ref={chiefInputRef}
+                    value={chiefInput}
+                    onChange={e => setChiefInput(e.target.value)}
+                    onKeyDown={handleChiefKeyDown}
+                    placeholder="총괄 지시를 입력하세요 — 담당 에이전트 선정은 chief-coordinator가 판단합니다. (Shift+Enter: 줄바꿈)"
+                    rows={1}
+                    disabled={chiefLoading}
+                    style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", resize: "none", outline: "none", fontSize: "14px", lineHeight: "1.6", fontFamily: "inherit", color: "var(--ink)", maxHeight: "120px", overflowY: "auto", padding: "6px 0" }}
+                  />
+                  <button
+                    onClick={() => sendChiefMessage()}
+                    disabled={chiefLoading || !chiefInput.trim()}
+                    style={{ width: "32px", height: "32px", borderRadius: "var(--radius-btn)", border: "none", background: (chiefLoading || !chiefInput.trim()) ? "var(--line-strong)" : "var(--accent)", color: "white", cursor: (chiefLoading || !chiefInput.trim()) ? "not-allowed" : "pointer", fontSize: "14px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                  >↑</button>
+                </div>
+
+                {/* 지난 기록 · 진행 중인 대화 (참고용, 접이식) */}
+                {(activeSessions.length > 0 || plans.length > 0) && (
+                  <details style={{ marginTop: "12px" }}>
+                    <summary style={{ fontSize: "11.5px", fontWeight: "700", letterSpacing: "0.3px", color: "var(--faint)", cursor: "pointer", userSelect: "none" }}>
+                      진행 중인 대화 {activeSessions.length > 0 ? activeSessions.length : 0}{plans.length > 0 ? ` · 지난 작업 기록 ${plans.length}` : ""}
+                    </summary>
+                    <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                      {activeSessions.length > 0 && (
+                        <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", overflow: "hidden" }}>
+                          {activeSessions.map((s, i) => {
+                            const lastMsg = [...s.msgs].reverse().find(m => m.role === "assistant") || s.msgs[s.msgs.length - 1];
+                            return (
+                              <button key={s.tabId} onClick={() => goAgent(s.tabId)}
+                                style={{ width: "100%", display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", border: "none", borderBottom: i < activeSessions.length - 1 ? "1px solid var(--line-soft)" : "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                                <span className="code-chip">{codeFor(s.tabId)}</span>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: "12.5px", fontWeight: "600", color: "var(--ink)" }}>{nameFor(s.tabId)}</div>
+                                  <div style={{ fontSize: "11px", color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summarizeReply(lastMsg ? lastMsg.content : "")}</div>
+                                </div>
+                                <span style={{ fontSize: "10.5px", color: "var(--faint)", flexShrink: 0 }}>{new Date(s.ts).toLocaleString("ko-KR")}</span>
+                                <span onClick={(e) => { e.stopPropagation(); resetCurrent(s.tabId); }} title="완료 처리"
+                                  style={{ width: "20px", height: "20px", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--faint)", cursor: "pointer", fontSize: "13px", borderRadius: "50%", flexShrink: 0 }}
+                                >×</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {plans.length > 0 && (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "12px" }}>
+                          {plans.map(plan => {
+                            const hasReview = plan.steps.some(s => s.status === "needs_review");
+                            const allDone = plan.steps.every(s => s.status === "done");
+                            const firstAgent = plan.steps[0] && plan.steps[0].agentId;
+                            return (
+                              <div key={plan.id} onClick={() => goPlan(plan.id)} className="agent-card" role="button" tabIndex={0}
+                                style={{ position: "relative", textAlign: "left", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: "14px", cursor: "pointer", fontFamily: "inherit", transition: "transform 0.15s ease, box-shadow 0.15s ease" }}>
+                                <button onClick={(e) => { e.stopPropagation(); deletePlan(plan.id); }} title="삭제"
+                                  style={{ position: "absolute", top: "8px", right: "8px", width: "22px", height: "22px", display: "flex", alignItems: "center", justifyContent: "center", border: "none", background: "transparent", color: "var(--faint)", cursor: "pointer", fontFamily: "inherit", fontSize: "14px", borderRadius: "50%" }}
+                                >×</button>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px", paddingRight: "20px" }}>
+                                  <span className="code-chip is-active">{codeFor(firstAgent)}</span>
+                                  <span className={"status-badge" + (hasReview ? " is-review" : allDone ? " is-done" : " is-running")}>{hasReview ? "확인 필요" : allDone ? "완료" : "진행 중"}</span>
+                                </div>
+                                <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--ink)", marginBottom: "5px" }}>{plan.title}</div>
+                                <div style={{ fontSize: "11.5px", color: "var(--muted)" }}>{plan.steps.length}개 에이전트 · {plan.steps.filter(s => s.status === "done").length}/{plan.steps.length} 단계</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                )}
+              </div>
             </div>
           </div>
         );
