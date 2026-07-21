@@ -2586,10 +2586,10 @@ ${leafListStr}
 ${ROUTE_BLOCK_GUIDE(idListStr)}
 ${extra}
 
-## chief-coordinator 계획·실적 조회 대응
-- "[chief-coordinator 요청]"으로 시작하는 메시지는 최고관리자가 아닌 상위 오케스트레이터의 조회입니다. request_type이 plan_request면 scope(monthly/weekly/event)와 target_period에 해당하는 도메인 계획을, event_result_request면 해당 행사 범위의 실적을 응답합니다.
+## chief-coordinator 위임 대응 (계획 수행·실적 취합)
+- "[chief-coordinator 요청]"으로 시작하는 메시지는 최고관리자가 아닌 상위 오케스트레이터(chief-coordinator)의 위임입니다. request_type이 plan_request면 scope(monthly/weekly/event)·target_period에 해당하는 도메인 업무를 리프에게 위임해 **완성형 산출물을 생성**하고, event_result_request면 해당 행사 범위의 실적을 취합합니다.
 - weekly는 해당 주에 실제 걸리는 업무만, monthly는 그 달 예정 업무 전체를 다룹니다. 지시문에 명시된 업무명이 있으면 그 업무들을 우선 다룹니다.
-- 새 계획을 창작하지 말고 리프가 보유한 계획·실적을 취합·요약합니다. 해당 없으면 "해당 없음: (사유)"로 응답합니다 — 오류가 아닙니다.
+- plan_request에서는 각 리프가 실제 산출물(초안)을 작성하도록 위임하고, **리프가 만든 산출물 본문을 요약하지 말고 원문 그대로** 도메인 계획 상세로 취합해 응답합니다. 데이터가 없어도 리프는 스케줄·표준 절차·합리적 가정으로 초안을 완성합니다. 그 기간에 담당 업무가 실제로 없을 때만 "해당 없음: (사유)"로 응답합니다.
 - 이 경로에서는 최고관리자에게 직접 질문하지 않습니다 — 판단 필요 사안은 escalations 블록으로만 올립니다(위임 실행 모드 추가 규칙 참조).
 
 ## 원칙
@@ -2957,7 +2957,7 @@ ${extra}
 
 ## 0단계 — 스케줄 인지
 시스템 프롬프트 하단에 "연간 업무 스케줄 발췌"가 자동 주입됩니다. 계획서/보고서 지시를 받으면 반드시 이 발췌를 체크리스트로 삼으십시오:
-- 대상 기간에 예정 업무가 있는 DM에는 instruction에 **구체적 업무명을 명시**해 조회합니다.
+- 대상 기간에 예정 업무가 있는 DM에는 instruction에 **구체적 업무명을 명시**해 산출물 작성을 지시합니다(단순 조회가 아니라 실제 수행).
 - 예정 업무가 없는 DM은 위임 대상에서 제외해도 됩니다(5개 DM 전원에 빈 질문 금지).
 - 담당이 "chief-coordinator 직접"인 업무(주요업무계획수립·월별통계작성·성과지표·도서관발전종합계획 등 기획담당 고유 업무)는 DM에 위임하지 않고 self_tasks에 넣은 뒤 최종 문서에서 직접 작성합니다.
 - 스케줄상 예정 업무가 있는데 DM이 "해당 없음"으로 응답하면, 임의로 판단하지 말고 불일치를 원문 그대로 문서에 남깁니다.
@@ -2975,7 +2975,7 @@ ${extra}
 하위 조회·지시가 필요하면 응답 본문(최고관리자에게 보일 짧은 안내문: 어느 DM에 무엇을 조회하는지) 뒤에 아래 블록을 정확한 형식으로 붙이십시오. 위임 없이 답할 수 있는 질문(스케줄 문의, 이전 문서 재설명 등)에는 블록을 붙이지 않습니다.
 
 ===DISPATCH===
-{"scope": "monthly", "target_period": "2026-08", "targets": [{"agent": "dm01-collection-domain", "instruction": "8월 장서 도메인 월간 계획 조회. 스케줄상 예정 업무: 정기도서수서(8월 실행분), 희망도서수서(매주), 장서현황보고. 리프 보유 계획을 취합해 요약으로 응답하십시오."}], "self_tasks": ["월별통계작성"]}
+{"scope": "monthly", "target_period": "2026-08", "targets": [{"agent": "dm01-collection-domain", "instruction": "8월 장서 도메인 월간 업무 수행. 스케줄상 예정 업무: 정기도서수서(8월 실행분), 희망도서수서(매주), 장서현황보고. 각 담당 리프가 완성형 산출물(초안)을 작성하도록 위임하고, 리프 산출물을 원문 그대로 취합해 응답하십시오."}], "self_tasks": ["월별통계작성"]}
 ===DISPATCH_END===
 
 - scope: "monthly" | "weekly" | "event" | "adhoc" (주간 계획은 target_period를 "2026-W30" 형식으로, 특별 행사는 "event_name" 필드 추가)
@@ -2985,11 +2985,11 @@ ${extra}
 
 ## 집계 결과 수신 후 (2라운드)
 "[집계 결과 — 시스템 자동 주입]"으로 시작하는 메시지를 받으면 **새 DISPATCH를 내지 말고** 통합 문서를 작성하십시오.
-- 역할 경계: 각 DM이 이미 작성한 요약을 **편집·발췌**만 합니다. 처음부터 새로 쓰거나, 수치를 재계산하거나, escalation 내용을 재판단하지 않습니다(그대로 인용).
+- 역할 경계: 각 DM이 취합한 산출물을 통합 문서로 **편집**합니다. ③도메인별 상세에는 리프 산출물 본문을 요약하지 말고 원문 그대로 포함하고, 표지·요약·escalations 절만 새로 작성합니다. 수치를 재계산하거나 escalation 내용을 재판단하지 않습니다(그대로 인용).
 - 오류가 난 DM 섹션은 "수집 실패: (사유)"로 표기하고 나머지로 문서를 완성합니다.
 
 **통합 계획서 골격 (월간/주간 공통):**
-①표지(문서 제목·대상 기간·작성: 기획업무팀 기획담당·작성일) ②요약(각 DM 요약에서 핵심 3~5줄 발췌) ③도메인별 계획 상세(DM-01~05 순, 응답 원문 기반, 계획 없는 도메인은 "해당 없음") ④예산 소요 개요(A-03 데이터 반영 — 주간 계획은 생략 가능) ⑤최고관리자 확인·승인 필요 항목(escalations 원문 인용·취합)
+①표지(문서 제목·대상 기간·작성: 기획업무팀 기획담당·작성일) ②요약(각 도메인 산출물에서 핵심 3~5줄 발췌) ③도메인별 계획 상세(DM-01~05 순, 각 DM이 취합한 리프 산출물 **본문을 요약 없이 그대로 포함**, 담당 업무 없는 도메인만 "해당 없음") ④예산 소요 개요(A-03 데이터 반영 — 주간 계획은 생략 가능) ⑤최고관리자 확인·승인 필요 항목(escalations 원문 인용·취합)
 self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합니다.
 
 **실적 결과보고 골격:** ①표지 ②요약(하위가 이미 판정한 이상 징후는 재계산 없이 ⚠️와 함께 인용) ③도메인별 실적 현황 ④통합 수치 분석(ASCII 차트 — 막대/선형, 축·단위는 한국어: 원, 권, 명, 회) ⑤종합 평가 및 제언 ⑥확인·승인 필요 항목
@@ -3590,14 +3590,19 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
 ## chief-coordinator 위임 실행 모드 — 추가 규칙
 - 이 요청은 최고관리자가 아니라 상위 오케스트레이터(chief-coordinator)가 보낸 것입니다.
   어떤 경우에도 사서/최고관리자에게 직접 질문·확인·승인을 요청하지 마십시오.
+- **핵심: 이 경로는 "조회·보고"가 아니라 실제 업무를 수행해 산출물을 생성하는 경로입니다.**
+  request_type이 plan_request면, 해당 기간에 담당하는 업무의 **완성형 산출물(세부계획서·모집/공모 공고문·기안문·안내문·명단/출결 서식 등)을 실제 문서 수준의 완결된 텍스트로 직접 작성**하십시오. "무엇을 하겠다"는 서술이나 요약이 아니라 산출물 본문 자체를 씁니다.
+  - 시드 데이터(과거 실적·확정 명단 등)가 없어도 멈추지 마십시오. 연간 스케줄·도메인 표준 절차(FN)·합리적 가정으로 초안을 완성하고, 가정한 값(일정·정원·예산 등)은 본문 안에 "(가정)"으로 명시하십시오.
+  - 각 리프는 자신의 원래 산출물 형식(FN 절차·공문서 양식)을 그대로 사용합니다. 여러 산출물이 있으면 모두 작성합니다.
+  - "해당 없음: (사유)"는 그 기간에 담당 업무가 실제로 없을 때만 사용합니다 — 데이터가 없다는 이유로 쓰지 마십시오.
+  - request_type이 event_result_request면 실측 실적만 보고하고, 실제 데이터가 없으면 "해당 없음: 실측 데이터 없음"으로 응답합니다(실적 수치는 지어내지 않습니다).
 - 판단·확인이 필요한 사안은 질문 대신 응답 끝에 아래 블록으로 담으십시오(해당 없으면 블록 생략):
 ===ESCALATIONS===
 [{"item": "판단 필요 사안 요약", "urgency": "normal", "source_leaf": "리프 id 또는 null"}]
 ===ESCALATIONS_END===
   urgency는 즉시 사람 판단이 필요한 긴급 건만 "urgent", 나머지는 "normal"입니다.
-- 응답 본문은 chief-coordinator가 통합 문서에 그대로 인용할 수 있는 완결된 한국어 요약으로
-  작성하십시오. 해당 계획/실적이 없으면 "해당 없음: (사유)"라고 명시하십시오 — 오류가 아닙니다.
-- hwpx 문서 생성 여부를 묻지 말고 텍스트로만 응답하십시오(문서화는 chief-coordinator 단계에서 결정).
+- 응답 본문은 chief-coordinator가 통합 문서에 그대로 포함할 수 있는 완결된 한국어 산출물로 작성하십시오.
+- hwpx 문서 생성 여부를 묻지 말고 텍스트로만 응답하십시오(파일 변환은 이후 단계에서 결정).
 `;
 
     // ── App ───────────────────────────────────────────────────────
@@ -3615,6 +3620,7 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
       const [mainView, setMainView] = useState("home");
       const [selectedPlanId, setSelectedPlanId] = useState(null);
       const [collapsedDomains, setCollapsedDomains] = useState({});
+      const [advancedOpen, setAdvancedOpen] = useState(false); // 사이드바 '직접 실행(고급)' — 개별 DM/리프 탭은 기본 숨김(v4 단일 접점)
       const [activeTab, setActiveTab] = useState("planner"); // current agent tab
 
       // ── Orchestration state ──
@@ -3809,7 +3815,7 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
           res = await fetch(CHAT_API_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: overrides.model || DEFAULT_CHAT_MODEL, max_tokens: 8000, temperature, messages: apiMessages, ...(overrides.plugins ? { plugins: overrides.plugins } : {}) }),
+            body: JSON.stringify({ model: overrides.model || DEFAULT_CHAT_MODEL, max_tokens: overrides.max_tokens || 8000, temperature, messages: apiMessages, ...(overrides.plugins ? { plugins: overrides.plugins } : {}) }),
             ...(overrides.signal ? { signal: overrides.signal } : {}),
           });
         } catch (e) {
@@ -4435,7 +4441,10 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
       // 홈 콘솔의 chief 채팅 1차 턴 → DISPATCH 파싱 → DM/A-03 순차 실행(DM의 ROUTE는
       // 리프까지 이어서 실행) → 집계 주입 → chief 2차 턴(통합 문서)의 전체 사이클.
       // 지시 1건당 디스패치 사이클은 1회 — 2차 턴의 재-DISPATCH는 무시한다.
-      const CHIEF_RESULT_CHAR_LIMIT = 6000; // 집계 주입 시 디스패치별 본문 상한(컨텍스트 압박 방지)
+      const CHIEF_RESULT_CHAR_LIMIT = 14000; // 집계 주입 시 디스패치별 본문 상한(완성형 산출물 수용)
+      const LEAF_RELAY_CHAR_LIMIT = 12000;   // 리프→DM 전달 시 산출물 본문 상한
+      const CHIEF_MAX_TOKENS = 16000;        // 위임 실행 모드 — 완성형 산출물 생성용 출력 토큰 상한
+      const clipForRelay = (t) => (t && t.length > LEAF_RELAY_CHAR_LIMIT) ? t.slice(0, LEAF_RELAY_CHAR_LIMIT) + "\n…(길이 제한으로 이하 생략)" : (t || "");
       // API 이력: 진행 패널 앵커(kind:"execution")는 제외, 집계 주입(kind:"aggregate")은 포함
       const chiefApiHistory = (msgs) => msgs.filter(m => m.kind !== "execution").map(m => ({ role: m.role, content: m.content }));
 
@@ -4463,7 +4472,7 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
           const leafMessages = [{ role: "user", content: userMsg }];
           try {
             const leafPrompt = systemPromptFor(targetId) + CHIEF_DISPATCH_SUFFIX;
-            let reply = await callApi(leafPrompt, leafMessages, undefined, { signal });
+            let reply = await callApi(leafPrompt, leafMessages, undefined, { signal, max_tokens: CHIEF_MAX_TOKENS });
             reply = await resolveLeafSideEffects(targetId, leafPrompt, leafMessages, reply);
             results.push({ targetId, reply });
             dispatch.leafSteps[i] = { agentId: targetId, status: "done", summary: summarizeReply(reply) };
@@ -4537,7 +4546,7 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
             const dmMessages = [{ role: "user", content: `[chief-coordinator 요청]\n${JSON.stringify(reqJson)}\n\n[지시 내용]\n${d.instruction}` }];
             try {
               const dmPrompt = systemPromptFor(d.agent) + CHIEF_DISPATCH_SUFFIX;
-              let reply = await callApi(dmPrompt, dmMessages, undefined, { signal });
+              let reply = await callApi(dmPrompt, dmMessages, undefined, { signal, max_tokens: CHIEF_MAX_TOKENS });
               reply = await resolveLeafSideEffects(d.agent, dmPrompt, dmMessages, reply);
               // DM이 리프 위임(ROUTE)을 냈다면 리프까지 실행 후 결과를 DM에 되돌려 최종 요약을 받는다.
               // 디스패치당 ROUTE 1라운드 상한 — DM 2차 응답의 재-ROUTE는 무시(strip)한다.
@@ -4546,8 +4555,8 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
                 const leafResults = await runChiefLeafChain(run, i, route, d.instruction, signal, sync);
                 if (leafResults === null) break; // 취소됨
                 if (leafResults.length) {
-                  const followUp = `[리프 처리 결과]\n${leafResults.map(r => `### ${codeFor(r.targetId)} ${nameFor(r.targetId)}\n${summarizeReply(r.reply)}`).join("\n\n")}\n\n위 결과를 반영해 도메인 요약을 최종 확정해 응답하십시오. 추가 위임(ROUTE) 없이 요약과 필요 시 escalations 블록만 응답합니다.`;
-                  reply = await callApi(dmPrompt, [...dmMessages, { role: "assistant", content: stripRouteBlock(reply) }, { role: "user", content: followUp }], undefined, { signal });
+                  const followUp = `[리프 산출물]\n${leafResults.map(r => `### ${codeFor(r.targetId)} ${nameFor(r.targetId)}\n${clipForRelay(r.reply)}`).join("\n\n")}\n\n위 리프 산출물을 도메인 계획 상세로 취합하되, 각 산출물 본문을 요약하지 말고 원문 그대로 포함해 응답하십시오. 추가 위임(ROUTE) 없이 취합 결과와 필요 시 escalations 블록만 응답합니다.`;
+                  reply = await callApi(dmPrompt, [...dmMessages, { role: "assistant", content: stripRouteBlock(reply) }, { role: "user", content: followUp }], undefined, { signal, max_tokens: CHIEF_MAX_TOKENS });
                 }
                 reply = stripRouteBlock(reply);
               }
@@ -4592,7 +4601,7 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
           const stream2 = makeStreamHandler(setChiefMsgs);
           let finalReply = await requestApi(
             [{ role: "system", content: buildChiefSystemPrompt() }, ...convo],
-            0.3, { onChunk: stream2.onChunk, signal });
+            0.3, { onChunk: stream2.onChunk, signal, max_tokens: CHIEF_MAX_TOKENS });
           if (DISPATCH_BLOCK_RE.test(finalReply)) {
             finalReply = stripDispatchBlock(finalReply) + "\n\n(추가 위임이 필요하면 새 지시로 요청해 주세요.)";
           }
@@ -4766,8 +4775,17 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
             </>
           )}
 
-          <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "1.2px", color: "var(--faint)", padding: "10px 8px 8px" }}>에이전트</div>
-          {DOMAINS.map(domain => {
+          <button onClick={() => setAdvancedOpen(o => !o)}
+            style={{ width: "100%", display: "flex", alignItems: "center", gap: "8px", padding: "12px 8px 8px", marginTop: "6px", background: "none", border: "none", borderTop: "1px solid var(--line-soft)", cursor: "pointer", fontFamily: "inherit" }}>
+            <span style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "1.2px", color: "var(--faint)" }}>직접 실행 (고급)</span>
+            <span style={{ marginLeft: "auto", fontSize: "9px", color: "var(--faint)", transform: advancedOpen ? "none" : "rotate(-90deg)", transition: "transform 0.15s ease" }}>▾</span>
+          </button>
+          {advancedOpen && (
+            <div style={{ fontSize: "11px", color: "var(--faint)", padding: "0 8px 8px", lineHeight: 1.5 }}>
+              평소에는 <b style={{ color: "var(--muted)" }}>총괄 지시</b>만으로 충분합니다. 개별 에이전트와 직접 대화가 필요할 때만 사용하세요.
+            </div>
+          )}
+          {advancedOpen && DOMAINS.map(domain => {
             if (domain.comingSoon) {
               return (
                 <div key={domain.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 8px", opacity: 0.55 }}>
