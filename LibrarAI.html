@@ -2587,9 +2587,9 @@ ${ROUTE_BLOCK_GUIDE(idListStr)}
 ${extra}
 
 ## chief-coordinator 위임 대응 (계획 수행·실적 취합)
-- "[chief-coordinator 요청]"으로 시작하는 메시지는 최고관리자가 아닌 상위 오케스트레이터(chief-coordinator)의 위임입니다. request_type이 plan_request면 scope(monthly/weekly/event)·target_period에 해당하는 도메인 업무를 리프에게 위임해 **완성형 산출물을 생성**하고, event_result_request면 해당 행사 범위의 실적을 취합합니다.
-- weekly는 해당 주에 실제 걸리는 업무만, monthly는 그 달 예정 업무 전체를 다룹니다. 지시문에 명시된 업무명이 있으면 그 업무들을 우선 다룹니다.
-- plan_request에서는 각 리프가 실제 산출물(초안)을 작성하도록 위임하고, **리프가 만든 산출물 본문을 요약하지 말고 원문 그대로** 도메인 계획 상세로 취합해 응답합니다. 데이터가 없어도 리프는 스케줄·표준 절차·합리적 가정으로 초안을 완성합니다. 그 기간에 담당 업무가 실제로 없을 때만 "해당 없음: (사유)"로 응답합니다.
+- "[chief-coordinator 요청]"으로 시작하는 메시지는 최고관리자가 아닌 상위 오케스트레이터(chief-coordinator)의 위임입니다. request_type이 plan_request면 scope(monthly/weekly/event)·target_period에 해당하는 도메인 업무를 담당 리프에게 **===ROUTE=== 블록으로 실제 위임**해 각 리프가 완성형 산출물을 생성하도록 하고(당신이 직접 산출물을 작성하지 않음), event_result_request면 해당 행사 범위의 실적을 취합합니다.
+- weekly는 해당 주에 실제 걸리는 업무만, monthly는 그 달 예정 업무만 다룹니다. **지시문에 명시된 이번 기간 활성 업무·리프에만 위임하고(부채살 확산 금지), 예정 없는 리프는 제외**합니다.
+- plan_request에서는 각 리프가 실제 산출물(초안)을 작성하도록 ROUTE로 위임하고, **리프가 만든 산출물 본문을 요약하지 말고 원문 그대로** 도메인 계획 상세로 취합해 응답합니다. 데이터가 없어도 리프는 스케줄·표준 절차·합리적 가정으로 초안을 완성합니다. 지시문이 "실측 수치·실적"을 요구하더라도 계획값은 "(가정)"으로 채워 산출물을 완성하며, **"데이터 미확보/상류 정보 미수신"을 이유로 리프 결과를 "해당 없음"으로 마감하지 마십시오.** 그 기간에 담당 업무 자체가 스케줄에 없을 때만 "해당 없음: (사유)"로 응답합니다.
 - 이 경로에서는 최고관리자에게 직접 질문하지 않습니다 — 판단 필요 사안은 escalations 블록으로만 올립니다(위임 실행 모드 추가 규칙 참조).
 
 ## 원칙
@@ -2957,7 +2957,7 @@ ${extra}
 
 ## 0단계 — 스케줄 인지
 시스템 프롬프트 하단에 "연간 업무 스케줄 발췌"가 자동 주입됩니다. 계획서/보고서 지시를 받으면 반드시 이 발췌를 체크리스트로 삼으십시오:
-- 대상 기간에 예정 업무가 있는 DM에는 instruction에 **구체적 업무명을 명시**해 산출물 작성을 지시합니다(단순 조회가 아니라 실제 수행).
+- 대상 기간에 예정 업무가 있는 DM에는 instruction에 **구체적 업무명과 담당 리프 힌트를 명시**해 산출물 작성을 지시합니다(단순 조회가 아니라 실제 수행). 스케줄 발췌의 "[리프: ...]" 힌트를 instruction에 옮겨, DM이 그 리프에만 위임(게이팅)하고 예정 없는 리프로 확산하지 않도록 합니다.
 - 예정 업무가 없는 DM은 위임 대상에서 제외해도 됩니다(5개 DM 전원에 빈 질문 금지).
 - 담당이 "chief-coordinator 직접"인 업무(주요업무계획수립·월별통계작성·성과지표·도서관발전종합계획 등 기획담당 고유 업무)는 DM에 위임하지 않고 self_tasks에 넣은 뒤 최종 문서에서 직접 작성합니다.
 - 스케줄상 예정 업무가 있는데 DM이 "해당 없음"으로 응답하면, 임의로 판단하지 말고 불일치를 원문 그대로 문서에 남깁니다.
@@ -2971,16 +2971,23 @@ ${extra}
 - 예산 조회·집행 현황 → a03-budget-management (A-03 예산)
 - 여러 도메인에 걸치면 분해해 각 DM에 나눠 지시합니다.
 
+## 실행·계획 지시 vs 실적 결과보고 (매우 중요 — 오작동 방지)
+"~업무를 실행/수행해줘", "~계획 세워줘", "8월 정례 업무 실행" 같은 지시(scope monthly/weekly/adhoc)는 **산출물(계획·문서 초안)을 생성**하라는 뜻입니다. 실제 운영이 아직 일어나지 않은 상태이므로:
+- DISPATCH instruction에 **"실측 수치·실적·지원자 수·신청 인원·접수 건수·작성 건수·집행 실적을 회신하라"처럼 아직 발생하지 않은 결과 데이터를 요구하지 마십시오.** 그러면 리프는 데이터가 없어 "해당 없음"만 반복 반환합니다(현재 관찰된 오작동의 원인).
+- 대신 **"담당 업무의 완성형 산출물(초안)을 작성하고, 계획 단계 수치(정원·예산·일정·차수)는 합리적 가정으로 채워 '(가정)'으로 표기해 회신하라"** 고 지시하십시오. 예: E-02에는 "지원자 수"가 아니라 "강사 공모 공고문 초안"을, E-03에는 "신청 인원"이 아니라 "수강생 모집 공고문·신청서 서식"을 요구합니다.
+- 직전 실행에서 "해당 없음"이 나왔더라도 실측 수치를 **더 강하게 요구하지 마십시오** — 그것은 산출물 생성 지시로 재구성해야 풀립니다(수치를 조른다고 없는 데이터가 생기지 않습니다).
+- 오직 사용자가 명시적으로 "실적/결과보고"를 요청하거나 scope가 event일 때만 실측 데이터를 요구하며, 이때 데이터가 없으면 "해당 없음"이 정상 응답입니다.
+
 ## DISPATCH 블록 (위임이 필요한 턴에만)
 하위 조회·지시가 필요하면 응답 본문(최고관리자에게 보일 짧은 안내문: 어느 DM에 무엇을 조회하는지) 뒤에 아래 블록을 정확한 형식으로 붙이십시오. 위임 없이 답할 수 있는 질문(스케줄 문의, 이전 문서 재설명 등)에는 블록을 붙이지 않습니다.
 
 ===DISPATCH===
-{"scope": "monthly", "target_period": "2026-08", "targets": [{"agent": "dm01-collection-domain", "instruction": "8월 장서 도메인 월간 업무 수행. 스케줄상 예정 업무: 정기도서수서(8월 실행분), 희망도서수서(매주), 장서현황보고. 각 담당 리프가 완성형 산출물(초안)을 작성하도록 위임하고, 리프 산출물을 원문 그대로 취합해 응답하십시오."}], "self_tasks": ["월별통계작성"]}
+{"scope": "monthly", "target_period": "2026-08", "targets": [{"agent": "dm01-collection-domain", "instruction": "8월 장서 도메인 월간 업무 수행. 스케줄상 예정 업무: 정기도서수서(8월 실행분·리프 B-01), 희망도서수서(매주·리프 B-02/B-03), 장서현황보고(DM 직접). 이 업무의 담당 리프에만 ROUTE 위임하고(B-04-H·B-05·B-06 등 예정 없는 리프 제외), 리프 산출물을 원문 그대로 취합해 응답하십시오."}], "self_tasks": ["월별통계작성"]}
 ===DISPATCH_END===
 
 - scope: "monthly" | "weekly" | "event" | "adhoc" (주간 계획은 target_period를 "2026-W30" 형식으로, 특별 행사는 "event_name" 필드 추가)
 - targets의 agent는 다음 id만 사용: ${CHIEF_DISPATCHABLE_IDS.join(", ")}
-- 리프 에이전트를 직접 지정하지 않습니다 — 어느 리프가 처리할지는 각 DM이 결정합니다.
+- 리프 최종 선택은 각 DM이 하되, 이번 기간 활성 업무에 해당하는 리프만 다루도록 instruction에 업무명·리프 힌트를 명시합니다(게이팅 — DM이 담당 리프 전체로 확산하지 않게 함).
 - self_tasks: "chief-coordinator 직접" 담당 업무명 배열(없으면 빈 배열).
 
 ## 집계 결과 수신 후 (2라운드)
@@ -3125,11 +3132,11 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
     const runShoppingQuery = async (body) => {
       const items = await Promise.all(body.items.map(async (it) => {
         try {
-          const res = await fetch(NAVER_SHOPPING_API_URL, {
+          const res = await bibApiLimit(() => fetch(NAVER_SHOPPING_API_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ query: it.name, display: 5, sort: "sim" }),
-          });
+          }));
           const data = await res.json();
           const results = (data.items || []).slice(0, 3).map(p => ({
             title: (p.title || "").replace(/<[^>]+>/g, ""),
@@ -3167,11 +3174,11 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
     const runB02SeojiFormatQuery = async (body) => {
       const items = await Promise.all(body.items.map(async (it) => {
         try {
-          const res = await fetch(SEOJI_API_URL, {
+          const res = await bibApiLimit(() => fetch(SEOJI_API_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(it.isbn ? { isbn: it.isbn, pageSize: 1 } : { title: it.title, pageSize: 1 }),
-          });
+          }));
           const data = await res.json();
           const doc = data.docs && data.docs[0];
           if (!doc) return { query_id: it.query_id, isbn: it.isbn, title: it.title, found: false };
@@ -3594,7 +3601,9 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
   request_type이 plan_request면, 해당 기간에 담당하는 업무의 **완성형 산출물(세부계획서·모집/공모 공고문·기안문·안내문·명단/출결 서식 등)을 실제 문서 수준의 완결된 텍스트로 직접 작성**하십시오. "무엇을 하겠다"는 서술이나 요약이 아니라 산출물 본문 자체를 씁니다.
   - 시드 데이터(과거 실적·확정 명단 등)가 없어도 멈추지 마십시오. 연간 스케줄·도메인 표준 절차(FN)·합리적 가정으로 초안을 완성하고, 가정한 값(일정·정원·예산 등)은 본문 안에 "(가정)"으로 명시하십시오.
   - 각 리프는 자신의 원래 산출물 형식(FN 절차·공문서 양식)을 그대로 사용합니다. 여러 산출물이 있으면 모두 작성합니다.
-  - "해당 없음: (사유)"는 그 기간에 담당 업무가 실제로 없을 때만 사용합니다 — 데이터가 없다는 이유로 쓰지 마십시오.
+  - **plan_request에서는 "데이터 미확보 / 상류 정보 미수신 / 미기록 / 확정 정보 없음"을 이유로 "해당 없음"을 반환하지 마십시오.** 그런 값은 연간 스케줄·표준 절차·합리적 가정으로 채워 "(가정)"으로 표기하고 **반드시 산출물을 완성**하십시오. 상류 리프(예: E-01→E-02→E-03 파이프라인)의 확정 정보가 없으면 표준 가정값으로 초안을 만듭니다("상류에서 못 받았다"는 회신 금지).
+  - 단, 계획 산출물을 만드는 것이지 실적을 보고하는 게 아닙니다 — 정원·예산·일정 등 계획값은 "(가정)"으로 채우되, 이미 일어난 것처럼 실측 실적(실제 지원자 수·실제 신청 인원·실제 집행액)을 지어내지는 마십시오.
+  - "해당 없음: (사유)"는 그 기간에 담당 업무 자체가 스케줄에 없을 때만 사용합니다.
   - request_type이 event_result_request면 실측 실적만 보고하고, 실제 데이터가 없으면 "해당 없음: 실측 데이터 없음"으로 응답합니다(실적 수치는 지어내지 않습니다).
 - 판단·확인이 필요한 사안은 질문 대신 응답 끝에 아래 블록으로 담으십시오(해당 없으면 블록 생략):
 ===ESCALATIONS===
@@ -3604,6 +3613,44 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
 - 응답 본문은 chief-coordinator가 통합 문서에 그대로 포함할 수 있는 완결된 한국어 산출물로 작성하십시오.
 - hwpx 문서 생성 여부를 묻지 말고 텍스트로만 응답하십시오(파일 변환은 이후 단계에서 결정).
 `;
+
+    // DM(도메인 에이전트) 전용 위임 접미사 — 리프 실제 호출 강제(인라인 산출물 작성 금지) + 리프 게이팅.
+    // 리프·A-03에는 붙이지 않는다(그들은 CHIEF_DISPATCH_SUFFIX로 산출물을 직접 만든다).
+    const CHIEF_DM_SUFFIX = `
+
+---
+## chief-coordinator 위임 실행 모드 — 도메인 에이전트(DM) 전용 규칙
+- 이 요청은 최고관리자가 아니라 상위 오케스트레이터(chief-coordinator)가 보낸 것입니다. 사서/최고관리자에게 직접 질문·확인·승인을 요청하지 마십시오.
+- **당신은 라우터·취합자이지 산출물 작성자가 아닙니다. 리프의 산출물(공고문·계획서·기안문 등)을 당신이 직접 써넣지 마십시오.** 반드시 담당 리프에게 ===ROUTE=== 블록으로 실제 위임하십시오. 첫 응답은 "어느 리프에 무엇을 시키는지" 1~3문장 + ROUTE 블록으로만 끝냅니다(산출물 본문 금지).
+- **리프 게이팅(중요): 지시문에 명시된 이번 기간 활성 업무·리프에만 위임하십시오.** 담당 리프 전체로 부채살처럼 펼치지 마십시오. 지시문이 특정 업무만 지목하면(예: 정기도서수서·희망도서수서) 그 업무의 리프에만 ROUTE하고, 이번 기간 예정 없는 리프(예: 장서점검 B-06, 균형 B-05)는 제외합니다. 활성 업무가 하나도 없으면 ROUTE 없이 "해당 없음: 이번 기간 예정 업무 없음"으로 답합니다.
+- 시스템이 리프 산출물을 모아 "[리프 산출물]"로 되돌려주면, 각 산출물 본문을 요약하지 말고 **원문 그대로** 도메인 계획 상세로 취합해 응답합니다. 이 취합 단계에서는 추가 ROUTE를 내지 않습니다.
+- request_type이 event_result_request면 리프에 실측 실적 취합을 위임하고, 실제 데이터가 없으면 "해당 없음: 실측 데이터 없음"으로 응답합니다(수치 창작 금지).
+- 판단·확인이 필요한 사안은 질문 대신 응답 끝에 아래 블록으로 담으십시오(해당 없으면 생략):
+===ESCALATIONS===
+[{"item": "판단 필요 사안 요약", "urgency": "normal", "source_leaf": "리프 id 또는 null"}]
+===ESCALATIONS_END===
+  urgency는 즉시 사람 판단이 필요한 긴급 건만 "urgent", 나머지는 "normal"입니다.
+- hwpx 문서 생성 여부를 묻지 말고 텍스트로만 응답하십시오.
+`;
+
+    // 레버4 — 동시 in-flight를 max개로 제한하는 세마포어. 중첩 병렬(DM들 + 각 DM의 리프들)이어도
+    // 실제 fetch 동시 실행 수를 묶어 429(rate limit)를 예방한다. 각 콜은 완료 즉시 슬롯을 반납하므로
+    // (DM은 자기 콜 종료 후에야 리프를 부른다) 부모가 슬롯을 쥔 채 자식을 기다리는 교착은 없다.
+    const makeLimiter = (max) => {
+      let active = 0; const queue = [];
+      const pump = () => {
+        while (active < max && queue.length) {
+          active++;
+          const { fn, resolve, reject } = queue.shift();
+          Promise.resolve().then(fn).then(resolve, reject).finally(() => { active--; pump(); });
+        }
+      };
+      return (fn) => new Promise((resolve, reject) => { queue.push({ fn, resolve, reject }); pump(); });
+    };
+
+    // 외부 서지 API(네이버 책검색/쇼핑·SEOJI) 전용 동시성 제한 — 병렬 리프가 후보마다 검색을 쏠 때
+    // 각 API 자체 rate limit(429)을 예방한다. LLM용 chiefLimit과 분리(서로 다른 서비스·한도).
+    const bibApiLimit = makeLimiter(4);
 
     // ── App ───────────────────────────────────────────────────────
     function App() {
@@ -3990,14 +4037,14 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
         // page_size 200 × 2페이지 병렬 수집 — ebook_yn/form을 서버측에서 이미 걸러주므로 8키워드 순회보다 호출 수가 적다.
         await Promise.all([1, 2].map(async (pageNo) => {
           try {
-            const res = await fetch(SEOJI_API_URL, {
+            const res = await bibApiLimit(() => fetch(SEOJI_API_URL, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 ebookYn: "N", form: "종이책", sort: "INPUT_DATE", orderBy: "DESC",
                 pageNo, pageSize: 200,
               }),
-            });
+            }));
             const data = await res.json();
             (data.docs || []).forEach(doc => raw.push(doc));
           } catch (e) {
@@ -4036,11 +4083,11 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
         if (!suspects.length) return candidates;
         const enriched = await Promise.all(suspects.map(async (c) => {
           try {
-            const res = await fetch(NAVER_BOOKS_API_URL, {
+            const res = await bibApiLimit(() => fetch(NAVER_BOOKS_API_URL, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ query: c.title, display: 5, sort: "sim" }),
-            });
+            }));
             const data = await res.json();
             const match = (data.items || []).find(item => (item.isbn || "").trim() === c.isbn);
             if (match) {
@@ -4443,7 +4490,10 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
       // 지시 1건당 디스패치 사이클은 1회 — 2차 턴의 재-DISPATCH는 무시한다.
       const CHIEF_RESULT_CHAR_LIMIT = 14000; // 집계 주입 시 디스패치별 본문 상한(완성형 산출물 수용)
       const LEAF_RELAY_CHAR_LIMIT = 12000;   // 리프→DM 전달 시 산출물 본문 상한
-      const CHIEF_MAX_TOKENS = 16000;        // 위임 실행 모드 — 완성형 산출물 생성용 출력 토큰 상한
+      const LEAF_MAX_TOKENS = 6000;          // 레버2 — 리프 산출물 1건 초안(콜당 경량화, 120초 천장 여유)
+      const DM_MAX_TOKENS = 8000;            // 레버2 — DM 라우팅 판단·리프 산출물 취합
+      const CHIEF_COMPILE_MAX_TOKENS = 10000;// 레버2 — chief 통합 문서(재필사 없이 편집)
+      const chiefLimit = makeLimiter(3);     // 레버4 — 전체 동시 in-flight ≤3(429 안전선)
       const clipForRelay = (t) => (t && t.length > LEAF_RELAY_CHAR_LIMIT) ? t.slice(0, LEAF_RELAY_CHAR_LIMIT) + "\n…(길이 제한으로 이하 생략)" : (t || "");
       // API 이력: 진행 패널 앵커(kind:"execution")는 제외, 집계 주입(kind:"aggregate")은 포함
       const chiefApiHistory = (msgs) => msgs.filter(m => m.kind !== "execution").map(m => ({ role: m.role, content: m.content }));
@@ -4455,35 +4505,31 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
         const dispatch = run.dispatches[dIdx];
         dispatch.leafSteps = route.targets.map(t => ({ agentId: t, status: "pending", summary: "" }));
         sync();
-        const results = [];
-        let prevReply = null, prevTargetId = null;
-        for (let i = 0; i < route.targets.length; i++) {
+        // 레버4 — 리프들을 제한적 병렬로 실행(전역 chiefLimit로 총 in-flight ≤3). 계획 모드에서는 각 리프가
+        // "(가정)"으로 초안을 완성하므로 이전 리프 산출물을 넘기지 않아도 됨(취합은 DM 단계에서 재조정).
+        const runLeaf = async (targetId, i) => {
           if (chiefCancelRef.current) return null;
-          const targetId = route.targets[i];
           dispatch.leafSteps[i].status = "running"; sync();
-          let userMsg = `[${nameFor(dispatch.agent)} 위임 사항]\n${route.note || "위 지시를 처리해 주세요."}`;
-          if (prevReply) {
-            userMsg += `\n\n[이전 단계 처리 요약 — ${nameFor(prevTargetId)}]\n${summarizeReply(prevReply)}`;
-          }
-          userMsg += `\n\n원본 지시: ${instruction}`;
-          if (targetId === "b01-acquisition") {
-            userMsg += await b01CandidatesBlock();
-          }
+          let userMsg = `[${nameFor(dispatch.agent)} 위임 사항]\n${route.note || "위 지시를 처리해 주세요."}\n\n원본 지시: ${instruction}`;
+          if (targetId === "b01-acquisition") userMsg += await b01CandidatesBlock();
           const leafMessages = [{ role: "user", content: userMsg }];
           try {
             const leafPrompt = systemPromptFor(targetId) + CHIEF_DISPATCH_SUFFIX;
-            let reply = await callApi(leafPrompt, leafMessages, undefined, { signal, max_tokens: CHIEF_MAX_TOKENS });
+            let reply = await chiefLimit(() => callApi(leafPrompt, leafMessages, undefined, { signal, max_tokens: LEAF_MAX_TOKENS }));
             reply = await resolveLeafSideEffects(targetId, leafPrompt, leafMessages, reply);
-            results.push({ targetId, reply });
             dispatch.leafSteps[i] = { agentId: targetId, status: "done", summary: summarizeReply(reply) };
-            prevReply = reply; prevTargetId = targetId;
+            sync();
+            return { targetId, reply };
           } catch (err) {
             if (err && err.name === "AbortError") return null;
             dispatch.leafSteps[i] = { agentId: targetId, status: "error", summary: err.message };
+            sync();
+            return null;
           }
-          sync();
-        }
-        return results;
+        };
+        const settled = await Promise.all(route.targets.map((t, i) => runLeaf(t, i)));
+        if (chiefCancelRef.current) return null;
+        return settled.filter(Boolean); // 순서 유지(Promise.all), 실패/취소 건 제외
       };
 
       const cancelChiefRun = () => {
@@ -4531,32 +4577,34 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
           sync();
           setChiefMsgs(prev => [...prev, { role: "assistant", kind: "execution", runId, content: "" }]);
 
-          // ③ 디스패치 순차 실행 — 오류 난 대상만 error로 표기하고 계속 진행
-          for (let i = 0; i < run.dispatches.length; i++) {
-            if (chiefCancelRef.current) break;
-            const d = run.dispatches[i];
+          // ③ 디스패치 실행 — 레버4: 제한적 병렬(전역 chiefLimit로 총 in-flight ≤3, 429 안전).
+          //    오류 난 대상만 error로 표기하고 나머지는 계속 진행.
+          const reqJson = {
+            requester_agent: "chief-coordinator",
+            request_type: run.scope === "event" ? "event_result_request" : "plan_request",
+            scope: run.scope,
+            ...(run.target_period ? { target_period: run.target_period } : {}),
+            ...(run.event_name ? { event_name: run.event_name } : {}),
+          };
+          const runOneDispatch = async (d, i) => {
+            if (chiefCancelRef.current) return;
             d.status = "running"; sync();
-            const reqJson = {
-              requester_agent: "chief-coordinator",
-              request_type: run.scope === "event" ? "event_result_request" : "plan_request",
-              scope: run.scope,
-              ...(run.target_period ? { target_period: run.target_period } : {}),
-              ...(run.event_name ? { event_name: run.event_name } : {}),
-            };
             const dmMessages = [{ role: "user", content: `[chief-coordinator 요청]\n${JSON.stringify(reqJson)}\n\n[지시 내용]\n${d.instruction}` }];
             try {
-              const dmPrompt = systemPromptFor(d.agent) + CHIEF_DISPATCH_SUFFIX;
-              let reply = await callApi(dmPrompt, dmMessages, undefined, { signal, max_tokens: CHIEF_MAX_TOKENS });
+              // DM은 라우터 접미사(리프 실제 호출 강제), A-03 등 비-DM은 산출물 접미사를 붙인다.
+              const isDM = !!DM_AGENTS_CONFIG[d.agent];
+              const dmPrompt = systemPromptFor(d.agent) + (isDM ? CHIEF_DM_SUFFIX : CHIEF_DISPATCH_SUFFIX);
+              let reply = await chiefLimit(() => callApi(dmPrompt, dmMessages, undefined, { signal, max_tokens: DM_MAX_TOKENS }));
               reply = await resolveLeafSideEffects(d.agent, dmPrompt, dmMessages, reply);
-              // DM이 리프 위임(ROUTE)을 냈다면 리프까지 실행 후 결과를 DM에 되돌려 최종 요약을 받는다.
+              // DM이 리프 위임(ROUTE)을 냈다면 리프까지 실행 후 결과를 DM에 되돌려 취합을 받는다.
               // 디스패치당 ROUTE 1라운드 상한 — DM 2차 응답의 재-ROUTE는 무시(strip)한다.
-              const route = DM_AGENTS_CONFIG[d.agent] ? parseRouteBlock(reply) : null;
+              const route = isDM ? parseRouteBlock(reply) : null;
               if (route) {
                 const leafResults = await runChiefLeafChain(run, i, route, d.instruction, signal, sync);
-                if (leafResults === null) break; // 취소됨
+                if (leafResults === null) return; // 취소됨
                 if (leafResults.length) {
                   const followUp = `[리프 산출물]\n${leafResults.map(r => `### ${codeFor(r.targetId)} ${nameFor(r.targetId)}\n${clipForRelay(r.reply)}`).join("\n\n")}\n\n위 리프 산출물을 도메인 계획 상세로 취합하되, 각 산출물 본문을 요약하지 말고 원문 그대로 포함해 응답하십시오. 추가 위임(ROUTE) 없이 취합 결과와 필요 시 escalations 블록만 응답합니다.`;
-                  reply = await callApi(dmPrompt, [...dmMessages, { role: "assistant", content: stripRouteBlock(reply) }, { role: "user", content: followUp }], undefined, { signal, max_tokens: CHIEF_MAX_TOKENS });
+                  reply = await chiefLimit(() => callApi(dmPrompt, [...dmMessages, { role: "assistant", content: stripRouteBlock(reply) }, { role: "user", content: followUp }], undefined, { signal, max_tokens: DM_MAX_TOKENS }));
                 }
                 reply = stripRouteBlock(reply);
               }
@@ -4564,12 +4612,13 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
               d.resultText = stripEscalationsBlock(reply);
               d.status = "done";
             } catch (err) {
-              if (err && err.name === "AbortError") break;
+              if (err && err.name === "AbortError") return;
               d.status = "error";
               d.resultText = "수집 실패: " + err.message;
             }
             sync();
-          }
+          };
+          await Promise.all(run.dispatches.map((d, i) => runOneDispatch(d, i)));
 
           if (chiefCancelRef.current) {
             run.status = "cancelled"; sync();
@@ -4601,7 +4650,7 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
           const stream2 = makeStreamHandler(setChiefMsgs);
           let finalReply = await requestApi(
             [{ role: "system", content: buildChiefSystemPrompt() }, ...convo],
-            0.3, { onChunk: stream2.onChunk, signal, max_tokens: CHIEF_MAX_TOKENS });
+            0.3, { onChunk: stream2.onChunk, signal, max_tokens: CHIEF_COMPILE_MAX_TOKENS });
           if (DISPATCH_BLOCK_RE.test(finalReply)) {
             finalReply = stripDispatchBlock(finalReply) + "\n\n(추가 위임이 필요하면 새 지시로 요청해 주세요.)";
           }

@@ -1,6 +1,7 @@
 // verify_chief.js — chief-coordinator 오케스트레이션 루프 결정론 검증 (v4 단일 접점)
 //
-// `page.route('**/api/chat')`로 호출 순번별 SSE 응답을 스텁하여, 실제 LLM 없이
+// `page.route('**/api/chat')`로 요청 본문 내용에 따라 SSE 응답을 스텁하여, 실제 LLM 없이
+// (레버4 병렬화로 콜 순서가 비결정적이므로 순번 대신 내용 매칭으로 라우팅)
 // chief 1차(DISPATCH) → DM-01(ROUTE→리프) → DM-03(urgent escalation) → 집계 주입 →
 // chief 2차(확인필요 미니 노트 + ①~⑤ 문서) 전체 사이클을 재현하고, 진행 패널·leafSteps·
 // 미니 노트·⑤절 렌더와 집계 주입 요청 바디의 escalations JSON, 새로고침 복원/interrupted
@@ -78,14 +79,25 @@ const check = (name, cond) => { results.push({ name, pass: !!cond }); if (!cond)
 
   const requestBodies = [];
   let callIdx = 0;
+  // 내용 기반 라우팅 — 병렬 실행이라 순번을 신뢰할 수 없으므로 요청 본문의 마커로 어떤 콜인지 판별한다.
+  // 마커는 반드시 "요청 페이로드에만" 있고 시스템 프롬프트엔 없는 문구를 쓴다
+  // (프롬프트에 [집계 결과]·[리프 산출물]·[chief-coordinator 요청] 문구가 들어있어 순진한 매칭은 충돌함).
+  const pickReply = (b) => {
+    if (b.includes('### escalations 취합')) return REPLIES[5];                          // chief 2차(집계 주입 고유 헤딩)
+    if (b.includes('LEAFMARK')) return REPLIES[3];                                      // DM-01 후속(리프 산출물 원문 에코)
+    if (b.includes('이번 주 복본 현황 확인')) return REPLIES[2];                          // 리프 b03(ROUTE note)
+    if (b.includes('[chief-coordinator 요청]') && b.includes('INSTR_DM01')) return REPLIES[1]; // DM-01 1차(ROUTE)
+    if (b.includes('[chief-coordinator 요청]') && b.includes('INSTR_DM03')) return REPLIES[4]; // DM-03
+    return REPLIES[0];                                                                 // chief 1차(DISPATCH)
+  };
   await page.route('**/api/chat', async (route) => {
-    requestBodies.push(route.request().postData() || '');
-    const body = REPLIES[callIdx] !== undefined ? REPLIES[callIdx] : '(스텁 초과 호출)';
+    const body = route.request().postData() || '';
+    requestBodies.push(body);
     callIdx++;
     await route.fulfill({
       status: 200,
       headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' },
-      body: sse(body),
+      body: sse(pickReply(body)),
     });
   });
 
@@ -119,7 +131,7 @@ const check = (name, cond) => { results.push({ name, pass: !!cond }); if (!cond)
 
   console.log('\n[4] 집계 주입 요청 바디 검증');
   check('총 6회 /api/chat 호출', callIdx === 6);
-  const aggBody = requestBodies[5] || '';
+  const aggBody = requestBodies.find(b => b.includes('### escalations 취합')) || '';
   check('집계 주입 바디에 escalations 취합 포함', aggBody.includes('escalations 취합'));
   check('집계 주입 바디에 urgent escalation JSON 포함', aggBody.includes('ESC_강사료_기준초과_승인필요') && aggBody.includes('urgent'));
   check('집계 주입 바디에 self_tasks(주간통계작성) 포함', aggBody.includes('주간통계작성'));
