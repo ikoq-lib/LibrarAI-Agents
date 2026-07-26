@@ -152,6 +152,11 @@
       ? "https://librar-ai-agents.vercel.app/api/books"
       : "/api/books";
 
+    // B-01 전용 — 주간 취합된 추천도서 후보 풀(Supabase acquisition_candidates) 조회
+    const ACQUISITION_CANDIDATES_API_URL = window.location.protocol === "file:"
+      ? "https://librar-ai-agents.vercel.app/api/acquisition-candidates"
+      : "/api/acquisition-candidates";
+
     // A-03 전용 — Supabase public.budget_lines/budget_resolutions 실제 조회·집행 프록시(예산관리)
     const BUDGET_API_URL = window.location.protocol === "file:"
       ? "https://librar-ai-agents.vercel.app/api/budget"
@@ -1006,13 +1011,13 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 - 모든 문장은 현대 한국어 한글로 작성하고, 한자·중국어·일본어 문자를 섞지 않습니다`;
 
     // ── B-01~B-06 (D1 장서 도메인) System Prompts ──────────────────
-    const B01_SYSTEM_PROMPT = `당신은 B-01 수서 에이전트입니다. 공공도서관 신간 도서 구입(수서) 업무를 전담하는 전문 에이전트입니다. SEOJI(국립중앙도서관 서지정보유통지원시스템)로 사전 수집된 신간 후보 목록(사용자 메시지에 함께 첨부됨)을 바탕으로 점수화, 예산 배분, 문서 생성까지 전 과정을 지원하되 최종 선정은 항상 사서가 결정합니다. 알라딘 API는 2026-07-09부로 차단되어 더 이상 사용하지 않습니다.
+    const B01_SYSTEM_PROMPT = `당신은 B-01 수서 에이전트입니다. 공공도서관 신간 도서 구입(수서) 업무를 전담하는 전문 에이전트입니다. 서점·출판사·언론·공공기관·북튜버 등 여러 추천 출처에서 주 1회 취합해 Supabase에 누적한 추천도서 후보 풀(사용자 메시지에 함께 첨부됨)을 바탕으로 점수화, 예산 배분, 문서 생성까지 전 과정을 지원하되 최종 선정은 항상 사서가 결정합니다. 알라딘 API는 2026-07-09부로 차단되어 더 이상 사용하지 않습니다.
 
 ## 담당 업무
-- FN-01 신간 후보 확인(하이브리드 수집 — ①구글 그라운딩 발굴 → ②SEOJI 검증확정 → ③SEOJI 출간일 수집 보충): 신간 후보 수집은 시스템이 매 요청마다 자동으로 실행하는 B-01의 기본 동작입니다 — 사용자 메시지 끝에 "[SEOJI 신간 후보 수집 결과]" 블록으로 후보(제목·저자·출판사·정가·출판일·ISBN·제본형태, 발굴분에는 인기신호)가 이미 첨부되어 전달되므로, 사서에게 "이미 작성한 목록이 있는지" 먼저 확인받거나 데이터 전달을 요청할 필요 없이 곧바로 이 데이터로 작업을 시작하세요. (다만 사서가 스스로 준비한 도서 목록을 메시지에 함께 제공하면 그 목록도 후보에 반영합니다.) 직접 검색을 수행하지 말고 이 데이터를 그대로 활용하세요. 이 블록의 모든 후보는 이미 서버측에서 전자책 제외·종이책·제본형태(무선제본/양장본/보드북)·정가 5만원 미만·(요청에 기간이 있으면) 출간일 창 안으로 필터링되고 SEOJI에 실존이 확정된 항목입니다 — 별도로 걸러낼 필요가 없습니다. SEOJI는 KDC 분류기호를 제공하지 않으므로(2020년 이후 미제공) KDC 대분류는 사서 확인 없이 임의로 확정하지 마세요. 이 데이터의 출처를 사서에게 설명할 때는 "내부 DB"처럼 미리 쌓아둔 카탈로그가 있는 듯한 표현을 쓰지 마세요 — 실제로는 매 요청마다 구글 검색(그라운딩)으로 인기 신간을 발굴하고 국립중앙도서관 SEOJI로 실존·서지를 검증확정한 뒤 부족분을 SEOJI 출간일 수집으로 보충한 결과이므로, "구글 검색으로 발굴하고 국립중앙도서관 SEOJI로 검증확정한 결과(부족분은 SEOJI 출간일 수집으로 보충)"처럼 정확히 표현하세요.
-  - **절대 규칙(허구 도서 생성 금지)**: 후보 목록·선정 목록에 올리는 모든 도서(제목·저자·출판사·ISBN 등)는 반드시 첨부된 "[SEOJI 신간 후보 수집 결과]" 블록에 실재하는 항목이어야 합니다. 이 블록에 없는 도서를 기억이나 추정으로 지어내 목록에 포함하는 것은 절대 금지입니다.
-  - 첨부된 블록이 "(수집된 후보 없음)"이거나 유효 후보가 부족한 경우, 절대로 도서를 임의로 만들어 채우지 말고 그 사실을 있는 그대로 보고한 뒤 사서에게 재수집(네트워크·API 상태 확인) 또는 사서가 직접 후보 추가를 요청하세요. 목표 예산·건수를 채우지 못하더라도 실재하지 않는 항목으로 채우는 것보다 미달 상태를 보고하는 것이 항상 우선입니다.
-  - **미검증(SEOJI 무응답) 상태 처리**: 블록 헤더에 "⚠ SEOJI 무응답"이 있으면, 해당 후보들은 SEOJI 실존 검증을 거치지 못한 웹 발굴분(미검증)이며 부족분 보충도 불가능한 상태입니다. 이때는 ①목록 전체가 "미검증 참고 목록"임을 응답 서두에 명확히 밝히고, ②각 항목의 실존이 확인되지 않았음과 목표 권수 미달 가능성을 사서에게 알리고, ③SEOJI 복구 후 재실행 또는 사서 직접 확인을 권고하세요. 이 상태에서는 확정 선정 목록으로 단정하지 말고, Excel(===엑셀시작===)을 생성하더라도 "미검증"임을 표 제목·비고에 명시하세요. 블록에 없는 도서를 지어내는 것은 이 상태에서도 절대 금지입니다.
+- FN-01 후보 풀 확인(주간 취합·캐시 우선): 사용자 메시지 끝에 "[B-01 추천도서 후보 풀]" 블록으로 후보(제목·저자·출판사·정가·출판일·ISBN·제본형태·추천출처·인기신호)가 이미 첨부되므로 곧바로 이 데이터로 작업을 시작하세요. 후보 풀은 서점·출판사·언론·공공기관·북튜버 등 여러 추천 출처를 주 1회 웹 검색으로 취합하고, SEOJI가 응답할 때 실존·서지를 검증·보강해 Supabase에 누적한 것입니다. 요청 시마다 웹을 다시 탐색하지 않습니다. 후보 풀 조회가 실패한 경우에만 시스템이 실시간 발굴 예비 경로를 사용합니다. 사서가 직접 준비한 목록을 제공하면 그 목록도 반영합니다. SEOJI는 KDC 분류기호를 제공하지 않으므로(2020년 이후 미제공) KDC 대분류는 사서 확인 없이 임의로 확정하지 마세요.
+  - **후보의 두 상태**: 각 후보는 "SEOJI 검증확정"(SEOJI가 실존·서지 확인) 또는 "⚠미검증(웹발굴)"(SEOJI에 없거나 SEOJI 무응답이라 웹 발굴 데이터 그대로) 중 하나입니다. **미검증도 실재가 웹에서 확인된 정상 후보이므로 목록·선정에 포함하되**, 응답에서 그 항목이 미검증임을 밝히고 "발주 전 사서 재확인 필요"를 안내하세요. 미검증이라는 이유만으로 후보에서 빼지 마십시오. Excel(===엑셀시작===)에 미검증 항목을 넣을 때는 비고에 "미검증"을 표기하세요.
+  - **절대 규칙(허구 도서 생성 금지)**: 후보 목록·선정 목록에 올리는 모든 도서(제목·저자·출판사·ISBN 등)는 반드시 첨부된 "[B-01 추천도서 후보 풀]" 블록에 실재하는 항목이어야 합니다. 이 블록에 없는 도서를 기억이나 추정으로 지어내 목록에 포함하는 것은 절대 금지입니다(미검증 항목을 채우려 지어내는 것도 금지 — 블록에 있는 것만 사용).
+  - 첨부된 블록이 "(후보 없음)"이거나 유효 후보가 부족한 경우, 절대로 도서를 임의로 만들어 채우지 말고 그 사실을 있는 그대로 보고한 뒤 사서에게 재수집 또는 사서가 직접 후보 추가를 요청하세요. 목표 예산·건수를 채우지 못하더라도 실재하지 않는 항목으로 채우는 것보다 미달 상태를 보고하는 것이 항상 우선입니다.
 - FN-02 복본·균형·희망도서 교차 확인: 후보를 B-03(복본 판정)·B-05(장서균형 결핍지수)에 위임하고 결과를 반영, 희망도서 요청과 교차해 우선순위 상향
 - FN-03 선정 기준 점수화: 이용자수요 40%(희망도서·유사도서 대출) + 사회적관심도 25%(베스트셀러 순위) + 장서균형 25%(B-05 결핍지수) + 출판시의성 10%
   - **사회적관심도(베스트셀러·화제성) 근거**: 후보 블록의 각 항목에 붙은 "인기신호" 필드(구글 그라운딩으로 발굴된 도서에만 표기, 웹 검색 기반)를 사회적관심도 점수의 근거로 사용합니다. 인기신호가 있는 도서는 사회적관심도를 가산하되, **인기신호가 없다는 이유만으로 후보에서 제외하지 마십시오** — 인기 신호는 가중치일 뿐이며, 인기신호가 없는 "SEOJI 보충" 후보도 균형·수요·시의성 등 다른 축으로 선정될 수 있습니다(사회적관심도는 중립 처리). 후보 블록에 없는 도서를 사회적관심도가 높다는 이유로 지어내 추가하는 것은 절대 금지입니다.
@@ -1028,7 +1033,7 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 - 복본 판정(B-03)·결핍지수 계산(B-05)은 직접 수행하지 않고 위임 결과만 활용합니다
 - 사서 승인 없이 외부 발주 시스템에 데이터를 전송하지 않습니다
 - 예산 초과 자료는 자동 제외하고 사유를 명시합니다
-- 첨부된 SEOJI 수집 데이터에 없는 도서는 어떤 이유로도 지어내지 않습니다 — 데이터 부족은 지어내서 채우지 말고 사실대로 보고합니다
+- 첨부된 추천도서 후보 풀에 없는 도서는 어떤 이유로도 지어내지 않습니다 — 데이터 부족은 지어내서 채우지 말고 사실대로 보고합니다
 - 사서가 특정 후보의 구매·확인 링크를 물으면 첨부된 데이터의 "링크" 값을 그대로 안내합니다. 실시간 인터넷 접속이 불가하다는 이유로 안내를 거부하지 마십시오 — 링크는 이미 시스템이 수집해 전달한 실제 데이터입니다. 값이 "확인불가"인 항목은 지어내지 않고 그대로 안내합니다
 - 모든 응답은 한국어로 작성합니다
 
@@ -1207,7 +1212,7 @@ B-01은 신규 도서를 들이는 업무, B-06은 기존 소장 장서 현황 �
         name: "수서", sub: "B-01", icon: "📚",
         gradient: "var(--grad-d1)",
         systemPrompt: B01_SYSTEM_PROMPT,
-        init: "안녕하세요! B-01 수서 에이전트입니다.\n\n신간 도서 구입(수서) 업무를 도와드립니다. SEOJI로 신간을 1차 수집(전자책 제외·종이책·무선제본/양장본/보드북만)하고 네이버 책 검색 API로 정가를 보완해 점수화, 예산 배분, Excel·기안문 생성까지 지원합니다.\n\n**주요 기능:**\n- FN-01: 신간 후보 수집\n- FN-02: 복본(B-03)·장서균형(B-05)·희망도서 교차 확인\n- FN-03: 선정 기준 점수화\n- FN-04: 예산 배분 초안\n- FN-05: Excel·기안문 생성\n\n**예시 요청:**\n- \"3분기 자료구입비 예산 120만원으로 신간 선정 초안을 만들어줘.\"\n- \"희망도서 신청 목록 35건, 잔여 예산 80만원으로 처리 가능한 것 선정해줘.\"",
+        init: "안녕하세요! B-01 수서 에이전트입니다.\n\n신간 도서 구입(수서) 업무를 도와드립니다. 서점·출판사·언론·공공기관·북튜버 등 여러 추천 출처를 주 1회 취합한 후보 풀을 바탕으로 수백 종도 일괄 검토하고, SEOJI 검증·복본 확인·점수화·예산 배분·Excel·기안문 생성까지 지원합니다.\n\n**주요 기능:**\n- FN-01: 주간 추천도서 후보 풀 조회\n- FN-02: 복본(B-03)·장서균형(B-05)·희망도서 교차 확인\n- FN-03: 선정 기준 일괄 점수화\n- FN-04: 예산 배분 초안\n- FN-05: Excel·기안문 생성\n\n**예시 요청:**\n- \"3분기 자료구입비 예산 1,200만원으로 500종 선정 초안을 만들어줘.\"\n- \"희망도서 신청 목록 35건, 잔여 예산 80만원으로 처리 가능한 것 선정해줘.\"",
         placeholder: "예산·KDC 범위·수집 주기 등 수서 요청을 입력하세요... (Shift+Enter: 줄바꿈)",
         quickActions: [
           { label: "신간 후보 수집",   msg: "이번 분기 신간 후보를 수집해주세요. 예산과 KDC 범위를 알려주세요." },
@@ -4287,49 +4292,53 @@ ${extra}
       };
 
       // 확정 후보를 B-01에게 보낼 텍스트 블록으로 직렬화.
-      // ⚠ 헤더 프리픽스 "[SEOJI 신간 후보 수집 결과"와 불릿 "- ... | ISBN: xxx | ..." 형식은 반드시 유지한다 —
+      // ⚠ 헤더 프리픽스 "[B-01 추천도서 후보 풀"과 불릿 "- ... | ISBN: xxx | ..." 형식은 반드시 유지한다 —
       // extractKnownB01Isbns 가드 정규식과 단일탭 재수집 체크(includes)가 이 형식에 의존한다.
-      const formatB01SeojiBlock = (candidates, opts = {}) => {
-        if (!candidates.length) return "\n\n[SEOJI 신간 후보 수집 결과]\n(확정 후보 없음 — 그라운딩 발굴·SEOJI 검증에서 조건에 맞는 실존 신간을 찾지 못했거나 API 응답 오류입니다. 지어내지 말고 사실대로 보고하고 재수집 또는 사서 후보 추가를 요청하세요.)";
+      const formatB01SeojiBlock = (candidates) => {
+        if (!candidates.length) return "\n\n[B-01 추천도서 후보 풀]\n(후보 없음 — 주간 후보 풀 조회와 실시간 예비 발굴이 모두 실패했거나 조건에 맞는 후보가 없습니다. 지어내지 말고 사실대로 보고하고 사서 후보 추가를 요청하세요.)";
         const lines = candidates.map(c => {
           const priceLabel = c.price ? `${c.price}원` : "확인필요";
           const pop = c.popnote ? ` | 인기신호: ${c.popnote}` : "";
-          const unv = opts.degraded ? " | ⚠미검증(SEOJI 무응답)" : "";
-          return `- ${c.title} | 저자: ${c.author || "미상"} | 출판사: ${c.publisher || "미상"} | 출간일: ${c.pubdate || "미상"} | 정가: ${priceLabel} | ISBN: ${c.isbn || "미상"} | 링크: ${c.link || "확인불가"} | 제본: ${c.formDetail || "미상"}${pop}${unv}`;
+          const sources = Array.isArray(c.sources) && c.sources.length ? ` | 추천출처: ${c.sources.join(", ")}` : "";
+          const status = c.source === "SEOJI확정" ? "" : " | ⚠미검증(웹발굴)";
+          return `- ${c.title} | 저자: ${c.author || "미상"} | 출판사: ${c.publisher || "미상"} | 출간일: ${c.pubdate || "미상"} | 정가: ${priceLabel} | ISBN: ${c.isbn || "미상"} | 링크: ${c.link || "확인불가"} | 제본: ${c.formDetail || "미상"}${sources}${pop}${status}`;
         });
-        if (opts.degraded) {
-          // a안: SEOJI 전면 무응답 → 검증·보충 모두 불가. 미검증 발굴분만 참고 제공하고, 부족분은 채우지 않고 미달을 정직 보고.
-          return `\n\n[SEOJI 신간 후보 수집 결과 — ⚠ SEOJI 무응답으로 실존 검증·부족분 보충 모두 불가. 아래 ${candidates.length}건은 웹 검색(구글 그라운딩)으로 발굴한 미검증 후보이며 실존·서지가 확인되지 않았습니다. 목표 권수에 미달할 수 있고(SEOJI 무응답으로 보충 불가), 각 후보는 사서 확인이 필수이며 SEOJI 복구 후 재실행을 권장합니다]\n${lines.join("\n")}`;
-        }
-        const gcount = candidates.filter(c => c.source === "그라운딩→SEOJI확정").length;
-        const scount = candidates.length - gcount;
-        return `\n\n[SEOJI 신간 후보 수집 결과 — 총 ${candidates.length}건(그라운딩 발굴→SEOJI 실존 검증확정 ${gcount}건 + SEOJI 출간일 수집 보충 ${scount}건). 모두 SEOJI 실존 확정본이며 전자책·부적합제본·정가 5만원 이상·출간창 밖은 제외됨. "인기신호"는 그라운딩 발굴분에만 표기(사회적관심도 근거)]\n${lines.join("\n")}`;
+        const vcount = candidates.filter(c => c.source === "SEOJI확정").length;
+        const ucount = candidates.length - vcount;
+        return `\n\n[B-01 추천도서 후보 풀 — 총 ${candidates.length}건(주간 다중 출처 취합: SEOJI 검증확정 ${vcount}건 + 웹발굴 미검증 ${ucount}건). 요청 때마다 다시 검색한 결과가 아니라 Supabase에 누적된 후보 풀이다. "⚠미검증(웹발굴)"은 웹에서 실재가 확인됐으나 SEOJI 대조 전이므로 목록에는 포함하되 발주 전 사서 재확인이 필요하다. "추천출처"와 "인기신호"는 발굴·관심도 근거]\n${lines.join("\n")}`;
       };
 
       // B-01 결정론적 검증 가드: KDC가 좁게 지정되는 등 실제 수집 후보와 잘 안 맞는 요청에서
       // 모델(gemini-flash-latest, thinkingBudget:0)이 "절대 규칙"을 어기고 실재하지 않는 도서를
       // 지어내는 사례가 있어(2026-07-16 확인), 프롬프트 준수에만 기대지 않고 코드 레벨에서 한 번 더 막는다.
-      // 대화에 실제로 첨부됐던 [SEOJI 신간 후보 수집 결과] 블록에서 ISBN을 모두 모아 "실재 후보 집합"을 만들고,
+      // 대화에 실제로 첨부됐던 [B-01 추천도서 후보 풀] 블록에서 ISBN을 모두 모아 "실재 후보 집합"을 만들고,
       // 최종 엑셀 표의 각 행 ISBN을 이 집합과 대조해 없는 행(=허구 도서)은 자동 제외한다.
       const normalizeIsbn = (s) => (s || "").replace(/[^0-9Xx]/g, "").toUpperCase();
 
       // 반드시 formatB01SeojiBlock()이 실제로 첨부한 데이터 블록(불릿 줄) 안의 ISBN만 인정한다.
       // 메시지 전체를 훑으면 AI가 과거 턴 본문에서 지어낸 책의 "ISBN: xxx" 문구까지 "실재"로
       // 잘못 등록되어(자기 오염), 다음 턴 검증에서 그 허구 ISBN이 통과해버리는 사례가 있었다(2026-07-18 확인).
+      // ISBN + 정규화 제목을 둘 다 화이트리스트로 모은다. 미검증(웹발굴) 후보는 ISBN이 없을 수 있어(SEOJI 미대조),
+      // ISBN만으로 대조하면 최종 표에서 억울하게 잘린다 — 제목 일치도 허용해 실재 후보를 지키고 지어낸 책만 막는다.
       const extractKnownB01Isbns = (msgs) => {
         const isbns = new Set();
-        const blockRe = /\[SEOJI 신간 후보 수집 결과[^\n]*\]\n((?:- .*(?:\n|$))*)/g;
-        const isbnRe = /ISBN:\s*([0-9Xx]+)/g;
+        const titles = new Set();
+        const blockRe = /\[B-01 추천도서 후보 풀[^\n]*\]\n((?:- .*(?:\n|$))*)/g;
         msgs.forEach(m => {
           if (typeof m.content !== "string") return;
           let blockMatch;
+          blockRe.lastIndex = 0;
           while ((blockMatch = blockRe.exec(m.content))) {
-            let isbnMatch;
-            isbnRe.lastIndex = 0;
-            while ((isbnMatch = isbnRe.exec(blockMatch[1]))) isbns.add(normalizeIsbn(isbnMatch[1]));
+            blockMatch[1].split("\n").forEach(line => {
+              if (!line.startsWith("- ")) return;
+              const im = line.match(/ISBN:\s*([0-9Xx]+)/);
+              if (im) isbns.add(normalizeIsbn(im[1]));
+              const tk = normTitleKey(line.slice(2).split("|")[0]); // "- 제목 | ..." → 제목
+              if (tk) titles.add(tk);
+            });
           }
         });
-        return isbns;
+        return { isbns, titles };
       };
 
       // ISBN-13 체크디지트 검증 — 화이트리스트 매칭과 무관하게 형식 자체가 무효한 번호를 걸러낸다.
@@ -4352,20 +4361,26 @@ ${extra}
       // 서술하는 부분이라 별도 카운트 불일치가 생길 수 있다.
       const B01_STATED_COUNT_RE = /(선정\s*초안\s*[:：]\s*)(\d+)(\s*종)/;
 
-      const verifyB01ExcelIsbns = (content, knownIsbns) => {
+      const verifyB01ExcelIsbns = (content, known) => {
+        const knownIsbns = known.isbns || known;          // 하위호환(과거엔 Set만 전달)
+        const knownTitles = known.titles || new Set();
         const excelM = content.match(/===엑셀시작===([\s\S]*?)===엑셀끝===/);
         if (!excelM) return content;
         const rows = parseMarkdownTableRows(excelM[1].trim().split("\n"));
         if (!rows.length) return content;
         const isbnIdx = rows[0].findIndex(h => /isbn/i.test(h));
+        const titleIdx = rows[0].findIndex(h => /제목|서명|title/i.test(h));
         let kept, removed = 0;
-        if (isbnIdx === -1) {
-          kept = rows.slice(1); // ISBN 컬럼 자체가 없으면 존재 검증은 불가 — 건수 정합성만 확인한다
+        if (isbnIdx === -1 && titleIdx === -1) {
+          kept = rows.slice(1); // ISBN·제목 컬럼이 모두 없으면 존재 검증 불가 — 건수 정합성만 확인
         } else {
           kept = [];
           rows.slice(1).forEach(r => {
-            const isbn = normalizeIsbn(r[isbnIdx] || "");
-            if (isbn && isValidIsbn13Checksum(isbn) && knownIsbns.has(isbn)) kept.push(r);
+            const isbn = isbnIdx >= 0 ? normalizeIsbn(r[isbnIdx] || "") : "";
+            const titleKey = titleIdx >= 0 ? normTitleKey(r[titleIdx] || "") : "";
+            const isbnOk = isbn && isValidIsbn13Checksum(isbn) && knownIsbns.has(isbn);
+            const titleOk = titleKey && knownTitles.has(titleKey); // 미검증(ISBN 없는) 후보는 제목으로 인정
+            if (isbnOk || titleOk) kept.push(r);
             else removed++;
           });
         }
@@ -4373,7 +4388,7 @@ ${extra}
         let result = content;
         if (removed) {
           const newTable = rowsToMarkdownTable([rows[0], ...kept]);
-          const warning = `\n\n⚠️ **검증 실패 ${removed}건 자동 제외**: ISBN 형식이 유효하지 않거나 실제 SEOJI 신간 후보 수집 결과에 없는 항목이 포함되어 있어 선정 목록에서 제외했습니다(시스템이 수집하지 않았거나 형식이 올바르지 않은 항목은 존재를 신뢰할 수 없습니다). 지정하신 KDC·조건에 맞는 실제 후보가 부족했을 수 있습니다 — 재수집하거나 사서님이 직접 후보를 추가해 주세요.`;
+          const warning = `\n\n⚠️ **검증 실패 ${removed}건 자동 제외**: ISBN 형식이 유효하지 않거나 실제 B-01 추천도서 후보 풀에 없는 항목이 포함되어 있어 선정 목록에서 제외했습니다(시스템이 취합하지 않았거나 형식이 올바르지 않은 항목은 존재를 신뢰할 수 없습니다). 지정하신 KDC·조건에 맞는 실제 후보가 부족했을 수 있습니다 — 후보 풀을 새로고침하거나 사서님이 직접 후보를 추가해 주세요.`;
           result = result.replace(excelM[0], `===엑셀시작===\n${newTable}\n===엑셀끝===`) + warning;
         }
 
@@ -4631,16 +4646,20 @@ ${extra}
         }
         return reply;
       };
-      // ── B-01 하이브리드 파이프라인 (2026-07-26) ────────────────────────────────
-      // SEOJI(CIP 등록 DB)는 등록일이 출간보다 앞서고 학술·정부·자가출판이 뒤섞여 "인기 신간 발굴원"으로
-      // 부적합했다(실측: 1~6월 요청에 7~8월 쏠림·쓰레기 후보). 그래서 순서를 역전한다:
-      //   ① 구글 그라운딩(tools 없는 Gemini 단독 호출)으로 서점 데이터 기반 인기 신간을 발굴
-      //   ② SEOJI로 각 발굴 후보의 실존·서지·적격성을 검증확정 — SEOJI에서 확인 안 되면 제외(할루시네이션 차단)
-      //   ③ 부족분은 출간일 필터를 고친 SEOJI 대량수집으로 보충(결정론적·저비용)
-      // 스모크테스트 결론상 그라운딩과 tools는 한 호출에 못 섞으므로 발굴은 tools 없는 별도 호출이다.
-      const B01_GROUNDING_TIMEOUT_MS = 25000;  // 서버리스 30초 천장 이전에 스스로 취소
-      const B01_DISCOVERY_CAP = 20;            // 발굴·검증 배치 상한 = SEOJI 검증 호출 상한(회당 ≤20+보충2). SEOJI 소프트쿼터 대비. 여유 확인되면 상향
-      const B01_CANDIDATE_POOL = 150;          // 최종 후보 풀 총량(그라운딩 확정 + SEOJI 보충)
+      // ── B-01 파이프라인 (2026-07-26, 그라운딩-주도 재설계) ─────────────────────────
+      // SEOJI(CIP 등록 DB)는 (1)소프트 쿼터라 다중 사용자에 스케일 안 되고 (2)학술·정부·자가출판 잡동사니가
+      // 섞여 발굴원으로 부적합했다. 그래서 SEOJI를 발굴·게이트·대량보충에서 빼고 "베스트에포트 보조"로 강등한다:
+      //   ① 장르별 구글 그라운딩(tools 없는 Gemini 병렬 호출)으로 인기 신간을 발굴해 후보 풀을 다 채운다
+      //   ② SEOJI는 살아있을 때만 각 후보를 검증·서지보강(확정표기·정가·적격성). 죽었거나 쿼터면 건너뛰고
+      //      "웹발굴(미검증)"으로 그대로 포함 — SEOJI가 없다고 후보를 버리거나 잡동사니로 채우지 않는다.
+      //   ③ SEOJI 대량 보충은 폐지(가장 큰 SEOJI 소비원이자 잡동사니 원천이었음).
+      // 그라운딩은 OpenRouter 크레딧(=돈)으로 스케일하므로 다중 사용자에 유리. 최종 발주 전 사서 재확인 전제.
+      const B01_GROUNDING_TIMEOUT_MS = 50000;  // 네이티브 웹검색은 첫 콘텐츠까지 ~22초(실측). 25초는 매번 타임아웃돼 []를 반환하던 원인 → 50초
+      const B01_GENRE_CAP = 12;                // 장르별 그라운딩 1회당 최대 발굴 수
+      // 광역 6버킷 — 그라운딩 동시성이 3 이상이면 경합으로 전멸(전부 타임아웃)하고 2는 안전함을 실측 확인(2026-07-26).
+      const B01_GENRES = ["소설·문학·시", "에세이·인문·역사", "자기계발·실용·경제경영", "과학·기술·교양", "어린이·청소년", "예술·취미·생활·건강"];
+      const b01GroundingLimit = makeLimiter(2); // 동시성 2(실측 안전선). 6버킷÷2 = 3웨이브 ≈ 90초. 상향 시 경합 주의
+      const B01_SEOJI_HEALTH_MIN = 3;          // SEOJI 초반 N건 연속 무응답이면 다운으로 보고 이후 검증 생략(부하·시간 절약)
 
       // "2026년 1월~6월", "상반기", "1월 1일 ~ 6월 30일" 등에서 출간일 창(YYYYMMDD)을 추출. 없으면 null.
       const parseB01PubWindow = (text) => {
@@ -4686,13 +4705,33 @@ ${extra}
         return out;
       };
 
-      // ① 그라운딩 발굴: tools 없는 Gemini 그라운딩 단독 호출로 인기 신간을 찾는다. 실패/타임아웃 시 [] 반환.
-      const b01GroundingDiscovery = async (userText, window) => {
+      // 제목/저자 정규화·유사도(0/0.5/1) — 중복 제거와 SEOJI 제목매칭에 사용.
+      const normTitleKey = (s) => (s || "").replace(/[\s·:：,，.\-—~()\[\]『』「」'"!?]/g, "").toLowerCase();
+      const b01TitleAuthorSim = (cand, doc) => {
+        const a = normTitleKey(cand.title), b = normTitleKey(doc.TITLE);
+        if (!a || !b) return 0;
+        const titleOk = a === b || (a.length >= 4 && b.length >= 4 && (a.includes(b) || b.includes(a)));
+        if (!titleOk) return 0;
+        const ca = normTitleKey(cand.author), da = normTitleKey(doc.AUTHOR);
+        if (ca && da && !(da.includes(ca) || ca.includes(da))) return 0.5; // 제목만 일치·저자 불일치 → 약함
+        return 1;
+      };
+      const B01_TITLE_SIM_THRESHOLD = 0.8;
+      const b01InWindow = (pubdate, window) => {
+        if (!window) return true;
+        const pd = String(pubdate || "").replace(/[^0-9]/g, "").slice(0, 8);
+        if (pd.length !== 8) return true; // 날짜 미상은 통과(판단 불가) — 그라운딩이 창을 지시받았으므로 대체로 안전
+        return pd >= window.startDate && pd <= window.endDate;
+      };
+
+      // ① 그라운딩 발굴(장르 1개): tools 없는 Gemini 그라운딩 단독 호출. 실패/타임아웃 시 [] 반환.
+      const b01GroundingDiscovery = async (userText, window, genre) => {
         const periodLabel = window
           ? `${window.startDate.slice(0, 4)}년 ${+window.startDate.slice(4, 6)}월~${window.endDate.slice(0, 4)}년 ${+window.endDate.slice(4, 6)}월`
           : "최근 6개월";
+        const genrePhrase = genre ? `${genre} 분야의 ` : "";
         const sys = "너는 공공도서관 수서 사서 보조다. 웹 검색으로 실제 출간이 확인된 국내 신간만 제시한다. 존재가 불확실하거나 검색으로 확인되지 않는 책은 넣지 않는다. 각 도서를 정확히 한 줄로, 필드는 파이프(|)로 구분해 출력하고 그 외 머리말·설명·번호는 쓰지 않는다.";
-        const user = `사서 요청: ${userText}\n\n위 요청에 맞춰 ${periodLabel}에 국내 출간된 대중적으로 인기 있거나 화제성이 높은 신간 도서를 최대 ${B01_DISCOVERY_CAP}종 웹 검색으로 찾아라. 공공도서관 수서 대상인 일반 단행본만 — 학술보고서·논문·정부간행물·자가출판·전자책·외국서적은 제외한다. **각 도서의 ISBN13(13자리 숫자)을 서점·출판사 페이지에서 반드시 확인해 포함하라. ISBN을 확인하지 못한 책은 아예 목록에 넣지 마라** — ISBN 없는 항목은 이후 SEOJI 검증에서 자동 탈락한다. 각 도서를 아래 형식의 한 줄로만 출력하라:\n제목 | 저자 | 출판사 | ISBN13(13자리 숫자) | 출간일 YYYY-MM-DD(모르면 미상) | 인기근거(베스트셀러 순위·수상·화제 등 한 구절)`;
+        const user = `사서 요청: ${userText}\n\n위 요청에 맞춰 ${periodLabel}에 국내 출간된 ${genrePhrase}대중적으로 인기 있거나 화제성이 높은 신간 도서를 최대 ${B01_GENRE_CAP}종 웹 검색으로 찾아라. 공공도서관 수서 대상인 일반 단행본만 — 학술보고서·논문·정부간행물·자가출판·전자책·외국서적은 제외한다. ISBN13(13자리 숫자)을 웹 검색 중 자연히 확인되면 함께 적고, 확실치 않으면 '미상'으로 둔다(추측 금지 — 책마다 ISBN을 따로 조회하느라 지체하지 말 것). 각 도서를 아래 형식의 한 줄로만 출력하라:\n제목 | 저자 | 출판사 | ISBN13(모르면 미상) | 출간일 YYYY-MM-DD(모르면 미상) | 인기근거(베스트셀러 순위·수상·화제 등 한 구절)`;
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), B01_GROUNDING_TIMEOUT_MS);
         try {
@@ -4701,90 +4740,129 @@ ${extra}
             0.5,
             { model: "google/gemini-3.5-flash", plugins: [{ id: "web", engine: "native" }], max_tokens: 2500, signal: ctrl.signal }
           );
-          return parseB01DiscoveryLines(text).slice(0, B01_DISCOVERY_CAP);
+          return parseB01DiscoveryLines(text).slice(0, B01_GENRE_CAP).map(c => ({ ...c, genre: genre || "" }));
         } catch (e) {
-          return []; // 발굴 실패는 전체 수서를 막지 않는다 — 보충 경로로 폴백
+          return []; // 개별 장르 발굴 실패는 전체를 막지 않는다
         } finally {
           clearTimeout(timer);
         }
       };
 
-      // ② SEOJI 검증확정: 발굴 후보를 SEOJI로 ISBN 조회해 실존·서지·적격성을 확정. 확인 안 되면 제외.
-      // SEOJI 호출량·오탐을 줄이기 위해 ISBN이 확보된 후보만 검증한다(ISBN 없는 발굴분은 검증 생략 → 제외).
-      // 제목검색 매칭은 오탐 위험이 크고 호출을 배로 늘려 제거함 — 대신 발굴 프롬프트에서 ISBN을 강제한다.
-      const b01VerifyViaSeoji = async (candidates, window) => {
-        const results = await Promise.all(candidates.map(async (cand) => {
-          if (!cand.isbn) return null; // ISBN 없는 후보는 검증 생략(호출·오탐 회피) → 제외
+      // ①-전체: 장르별 그라운딩을 병렬 실행해 후보 풀을 구성하고 ISBN(있으면)·정규화 제목으로 중복 제거.
+      const b01GroundingDiscoverAll = async (userText, window) => {
+        const batches = await Promise.all(
+          B01_GENRES.map(g => b01GroundingLimit(() => b01GroundingDiscovery(userText, window, g)))
+        );
+        const seen = new Set();
+        const merged = [];
+        batches.flat().forEach(c => {
+          if (!c || !c.title) return;
+          const key = c.isbn ? "i:" + c.isbn : "t:" + normTitleKey(c.title) + "|" + normTitleKey(c.author);
+          if (seen.has(key)) return;
+          seen.add(key);
+          merged.push(c);
+        });
+        return merged;
+      };
+
+      // 미검증(웹발굴) 후보 표준화 — SEOJI가 확인해주지 못했을 때 그라운딩 데이터 그대로 포함.
+      const b01AsUnverified = (c) => ({
+        title: c.title, isbn: /^\d{13}$/.test(normalizeIsbn(c.isbn || "")) ? normalizeIsbn(c.isbn) : "",
+        formDetail: "", pubdate: c.pubdate || "", author: c.author || "", publisher: c.publisher || "",
+        price: "", link: "", popnote: c.popnote || "", genre: c.genre || "", source: "웹발굴(미검증)",
+      });
+
+      // ② SEOJI 베스트에포트 보강: 살아있으면 각 후보를 SEOJI로 검증·서지보강(확정표기), SEOJI가 명시적으로
+      // 부적격(전자책·비종이책·부적합제본·고가)이라 판정한 것만 제외한다. SEOJI에 없거나 무응답이면 후보를
+      // 버리지 않고 "웹발굴(미검증)"으로 포함. 초반 연속 무응답이면 SEOJI 다운으로 보고 이후 검증을 생략한다.
+      const b01EnrichViaSeoji = async (candidates, window) => {
+        let seojiDown = false, sawDoc = false, emptyStreak = 0;
+        const out = [];
+        for (const cand of candidates) {
+          if (seojiDown || (!cand.isbn && !cand.title)) { out.push(b01AsUnverified(cand)); continue; }
           try {
             const res = await bibApiLimit(() => fetch(SEOJI_API_URL, {
-              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isbn: cand.isbn, pageSize: 5 }),
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(cand.isbn ? { isbn: cand.isbn, pageSize: 5 } : { title: cand.title, pageSize: 10 }),
             }));
             const data = await res.json();
             const docs = data.docs || [];
-            const doc = docs.find(d => normalizeIsbn(d.EA_ISBN) === cand.isbn) || null;
-            if (!doc) return null; // SEOJI 미확인 → 제외(할루시네이션 차단)
+            if (docs.length) { sawDoc = true; emptyStreak = 0; }
+            else {
+              emptyStreak++;
+              if (!sawDoc && emptyStreak >= B01_SEOJI_HEALTH_MIN) seojiDown = true; // 초반 연속 무응답 → SEOJI 다운
+              out.push(b01AsUnverified(cand)); continue;
+            }
+            let doc = cand.isbn ? (docs.find(d => normalizeIsbn(d.EA_ISBN) === cand.isbn) || null) : null;
+            if (!doc && !cand.isbn) doc = docs.find(d => b01TitleAuthorSim(cand, d) >= B01_TITLE_SIM_THRESHOLD) || null;
+            if (!doc) { out.push(b01AsUnverified(cand)); continue; } // SEOJI에 없음 → 제외 아님, 미검증으로 포함
             const isbn = normalizeIsbn(doc.EA_ISBN || "");
-            if (!/^\d{13}$/.test(isbn)) return null;
+            if (!/^\d{13}$/.test(isbn)) { out.push(b01AsUnverified(cand)); continue; }
             const ebookYn = (doc.EBOOK_YN || "").trim().toUpperCase();
             const form = (doc.FORM || "").trim();
             const formDetail = (doc.FORM_DETAIL || "").trim();
-            if (ebookYn === "Y" || (form && form !== "종이책")) return null;                 // R-04 전자책·비종이책
-            if (formDetail && !B01_ALLOWED_FORM_DETAILS.includes(formDetail)) return null;   // R-04 부적합 제본
+            if (ebookYn === "Y" || (form && form !== "종이책")) continue;                  // SEOJI 명시적 부적격 → 제외
+            if (formDetail && !B01_ALLOWED_FORM_DETAILS.includes(formDetail)) continue;
             const price = /^\d+$/.test(doc.PRE_PRICE || "") ? doc.PRE_PRICE : "";
-            if (price && parseInt(price, 10) >= 50000) return null;                          // R-08 고가
-            const pubdate = doc.PUBLISH_PREDATE || doc.REAL_PUBLISH_DATE || "";
-            if (window && pubdate) {
-              const pd = pubdate.replace(/[^0-9]/g, "").slice(0, 8);
-              if (pd.length === 8 && (pd < window.startDate || pd > window.endDate)) return null; // 출간창 밖
-            }
-            if (/세트|전\d+권/.test(doc.TITLE || "")) return null;
-            return {
+            if (price && parseInt(price, 10) >= 50000) continue;
+            if (/세트|전\d+권/.test(doc.TITLE || "")) continue;
+            out.push({
               title: (doc.TITLE || cand.title).trim(), isbn, formDetail: formDetail || "무선제본",
-              pubdate, author: (doc.AUTHOR || cand.author || "").trim(),
+              pubdate: (doc.PUBLISH_PREDATE || doc.REAL_PUBLISH_DATE || cand.pubdate || ""),
+              author: (doc.AUTHOR || cand.author || "").trim(),
               publisher: (doc.PUBLISHER || cand.publisher || "").trim(),
-              price, link: "", popnote: cand.popnote || "", source: "그라운딩→SEOJI확정",
-            };
+              price, link: "", popnote: cand.popnote || "", genre: cand.genre || "", source: "SEOJI확정",
+            });
           } catch (e) {
-            return null;
+            out.push(b01AsUnverified(cand)); // 조회 오류 → 미검증으로 포함(전체를 막지 않음)
           }
-        }));
-        const seen = new Set();
-        const confirmed = [];
-        results.forEach(r => { if (r && !seen.has(r.isbn)) { seen.add(r.isbn); confirmed.push(r); } });
-        return confirmed;
+        }
+        return out;
       };
 
-      // B-01 최초 실행 시 후보 풀을 구성해 사용자 메시지에 붙이는 공용 헬퍼:
-      // 그라운딩 발굴 → SEOJI 검증확정 → (부족분) SEOJI 출간일 수집 보충.
+      // Supabase의 주간 추천도서 후보 풀을 먼저 조회한다. 이 경로는 요청당 외부 검색 비용이 없고
+      // 수백 종을 한 번에 가져올 수 있다. 조회 장애나 빈 결과일 때만 아래 실시간 발굴을 예비 경로로 쓴다.
+      const fetchB01CachedCandidates = async (userText = "") => {
+        const window = parseB01PubWindow(userText);
+        const params = new URLSearchParams({ limit: "500" });
+        if (window?.startDate) params.set("start_date", window.startDate);
+        if (window?.endDate) params.set("end_date", window.endDate);
+        const res = await fetch(`${ACQUISITION_CANDIDATES_API_URL}?${params.toString()}`);
+        if (!res.ok) throw new Error(`후보 풀 조회 실패(HTTP ${res.status})`);
+        const data = await res.json();
+        return (data.candidates || []).map(c => ({
+          title: c.title || "",
+          isbn: normalizeIsbn(c.isbn || ""),
+          formDetail: c.form_detail || "",
+          pubdate: c.pubdate || "",
+          author: c.author || "",
+          publisher: c.publisher || "",
+          price: c.price || "",
+          link: "",
+          popnote: c.popnote || "",
+          genre: c.genre || "",
+          sources: c.sources || [],
+          recommendCount: c.recommend_count || 1,
+          source: c.verified ? "SEOJI확정" : "웹발굴(미검증)",
+        }));
+      };
+
+      // B-01 최초 실행 시 후보 풀을 구성해 사용자 메시지에 붙이는 공용 헬퍼.
+      // 1순위: 주간 취합 캐시. 2순위: 장애 시에만 장르별 실시간 그라운딩 → SEOJI 보강.
       const b01CandidatesBlock = async (userText = "") => {
         const window = parseB01PubWindow(userText);
-        const discovered = await b01GroundingDiscovery(userText, window);
-        let confirmed = discovered.length ? await b01VerifyViaSeoji(discovered, window) : [];
-        confirmed = await enrichB01PriceViaNaver(confirmed);
-        const need = B01_CANDIDATE_POOL - confirmed.length;
-        let supplement = [];
-        let seojiPoolCount = 0;
-        if (need > 0) {
-          const have = new Set(confirmed.map(c => normalizeIsbn(c.isbn)));
-          const pool = await fetchB01SeojiCandidates(window, need + 50);
-          seojiPoolCount = pool.length;
-          supplement = pool
-            .filter(c => !have.has(normalizeIsbn(c.isbn)))
-            .slice(0, need)
-            .map(c => ({ ...c, popnote: "", source: "SEOJI보충" }));
+        try {
+          const cached = await fetchB01CachedCandidates(userText);
+          if (cached.length) return formatB01SeojiBlock(cached);
+        } catch (e) {
+          console.warn("B-01 주간 후보 풀 조회 실패, 실시간 예비 발굴로 전환:", e.message);
         }
-        // degraded(a안): 발굴은 됐는데 SEOJI 검증확정 0건 + 보충 수집 0건이면 SEOJI 전면 무응답으로 간주.
-        // (정상이면 넓은 보충 쿼리가 다수 반환하므로 seojiPoolCount 0은 무응답의 강한 신호.) 이때는 SEOJI로
-        // 보충을 시도하지 않고 미검증 발굴분만 참고 제공하며, 부족분은 채우지 않고 미달을 정직 보고한다.
-        if (discovered.length && confirmed.length === 0 && seojiPoolCount === 0) {
-          const degradedRows = discovered.map(c => ({
-            title: c.title, isbn: c.isbn, formDetail: "", pubdate: c.pubdate || "",
-            author: c.author, publisher: c.publisher, price: "", link: "",
-            popnote: c.popnote, source: "그라운딩(미검증)",
-          }));
-          return formatB01SeojiBlock(degradedRows, { degraded: true });
-        }
-        return formatB01SeojiBlock([...confirmed, ...supplement]);
+        const discovered = await b01GroundingDiscoverAll(userText, window);
+        if (!discovered.length) return formatB01SeojiBlock([]); // 그라운딩 전면 실패 → 후보 없음(정직 보고)
+        let pool = await b01EnrichViaSeoji(discovered, window);
+        pool = pool.filter(c => b01InWindow(c.pubdate, window)); // 확인된 출간일이 창 밖이면 제외(미상은 통과)
+        pool = await enrichB01PriceViaNaver(pool);               // 정가 공백 보완(네이버 살아있는 동안, 베스트에포트)
+        return formatB01SeojiBlock(pool);
       };
 
       const runDmChain = async (tab, initialState) => {
@@ -4799,7 +4877,7 @@ ${extra}
             }
             userMsg += `\n\n원본 지시: ${state.originalInstruction}`;
             // B-01이 DM 위임으로 처음 실행될 때도, 직접 B-01 탭에서 대화할 때와 동일하게
-            // SEOJI 신간 후보 수집을 자동으로 먼저 실행해 결과를 붙여준다 — 그래야 B-01이
+            // 주간 추천도서 후보 풀을 자동으로 먼저 조회해 결과를 붙여준다 — 그래야 B-01이
             // "수집 결과를 달라"고 되묻지 않고 곧바로 목록 작성을 시작한다.
             if (targetId === "b01-acquisition") {
               userMsg += await b01CandidatesBlock(state.originalInstruction || state.note || "");
@@ -5035,14 +5113,14 @@ ${extra}
             // 그 리프와의 대화를 이어가는 답변이다.
             await runDmChain(tab, { ...pausedChain, leafMessages: [...pausedChain.leafMessages, { role: "user", content: userText }] });
           } else {
-            // B-01: 이 대화에서 아직 SEOJI 수집 데이터를 받은 적이 없거나, 사서가 재수집을 요청한 경우에만
-            // SEOJI 검색 결과를 API 호출용 메시지에만 첨부한다 (화면에 보이는 채팅 로그는 깔끔하게 유지).
+            // B-01: 이 대화에서 아직 추천도서 후보 풀을 받은 적이 없거나 사서가 새로고침을 요청한 경우에만
+            // 후보 풀을 API 호출용 메시지에 첨부한다(화면에 보이는 채팅 로그는 깔끔하게 유지).
             // 과거에는 "수집|후보|신간|찾아|검색" 키워드 매칭으로 트리거했으나, "수서 목록 작성해줘"처럼
             // 키워드가 없는 요청에서는 수집이 누락되어 에이전트가 데이터 대기 상태로 멈추는 문제가 있었다.
             let apiMsgs = newMsgs;
             if (tab === "b01-acquisition") {
-              const alreadyCollected = currentMsgs.some(m => typeof m.content === "string" && m.content.includes("[SEOJI 신간 후보 수집 결과"));
-              const wantsRecollect = /재수집|다시\s*(수집|검색|찾)/.test(userText);
+              const alreadyCollected = currentMsgs.some(m => typeof m.content === "string" && m.content.includes("[B-01 추천도서 후보 풀"));
+              const wantsRecollect = /재수집|새로고침|다시\s*(수집|검색|찾|불러)/.test(userText);
               if (!alreadyCollected || wantsRecollect) {
                 apiMsgs = newMsgs.slice(0, -1).concat({ role: "user", content: userText + await b01CandidatesBlock(userText) });
               }
