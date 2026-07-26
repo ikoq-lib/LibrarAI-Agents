@@ -426,9 +426,20 @@ async function discoverSourceWithAi(source, limit) {
           body: JSON.stringify({
             model: MODEL,
             temperature: 0.1,
-            max_tokens: Math.max(700, Math.min(1800, 450 + limit * 85)),
+            max_tokens: 3000,
+            reasoning: { effort: "low" },
             stream: false,
-            plugins: [{ id: "web", engine: "native", search_prompt: `site:${source.domain}` }],
+            tools: [
+              {
+                type: "openrouter:web_search",
+                parameters: {
+                  engine: "exa",
+                  max_results: Math.min(10, Math.max(5, limit)),
+                  max_characters: 3000,
+                  allowed_domains: [source.domain],
+                },
+              },
+            ],
             messages: [
               { role: "system", content: system },
               { role: "user", content: user },
