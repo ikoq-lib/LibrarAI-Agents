@@ -1,31 +1,100 @@
 /**
  * B-01 주간 추천도서 취합기
  *
- * 여러 장르의 국내 신간·화제 도서를 웹 검색으로 발굴하고, SEOJI로 서지를
- * 베스트에포트 검증한 뒤 public.acquisition_candidates에 누적한다.
+ * 출처별 공개 페이지를 먼저 직접 수집하고, 직접 수집이 불가능하거나 할당량에
+ * 못 미친 출처만 OpenRouter 웹 검색으로 보완한다. SEOJI는 후보 발굴원이
+ * 아니라 실존·서지·포맷을 확인하는 베스트에포트 검증원이다.
  *
- * 필수 환경변수:
- * - OPENROUTER_API_KEY
- * - SUPABASE_DB_PASSWORD
- * - SEOJI_API_KEY_NL_DIRECT
+ * 운영 환경변수:
+ * - OPENROUTER_API_KEY: AI 보완 수집이 필요할 때
+ * - SEOJI_API_KEY_NL_DIRECT: SEOJI 검증을 사용할 때
+ * - SUPABASE_DB_PASSWORD: 후보 풀에 적재할 때
+ *
+ * 로컬 진단:
+ * - B01_HARVEST_SKIP_AI=1
+ * - B01_HARVEST_SKIP_SEOJI=1
+ * - B01_HARVEST_SKIP_DB=1
  */
+import * as cheerio from "cheerio";
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import pg from "pg";
+import { pathToFileURL } from "node:url";
 
 const { Pool } = pg;
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const SEOJI_URL = "https://www.nl.go.kr/seoji/SearchApi.do";
 const MODEL = process.env.B01_HARVEST_MODEL || "google/gemini-3.5-flash";
-const GENRE_CAP = Number(process.env.B01_HARVEST_GENRE_CAP || 12);
-const GENRES = [
-  "소설·문학·시",
-  "에세이·인문·역사",
-  "자기계발·실용·경제경영",
-  "과학·기술·교양",
-  "어린이·청소년",
-  "예술·취미·생활·건강",
-];
+const USER_AGENT =
+  "Mozilla/5.0 (compatible; LibrarAI-B01/1.0; +https://github.com/ikoq-lib/LibrarAI-Agents)";
+const REQUEST_TIMEOUT_MS = Number(process.env.B01_HARVEST_TIMEOUT_MS || 30_000);
+const MIN_SUCCESS = Number(process.env.B01_HARVEST_MIN_SUCCESS || 40);
+const PARTIAL_SUCCESS = Number(process.env.B01_HARVEST_PARTIAL_SUCCESS || 30);
+const MAX_STORED = Number(process.env.B01_HARVEST_MAX_STORED || 50);
+const SKIP_AI = process.env.B01_HARVEST_SKIP_AI === "1";
+const SKIP_SEOJI = process.env.B01_HARVEST_SKIP_SEOJI === "1";
+const SKIP_DB = process.env.B01_HARVEST_SKIP_DB === "1";
 const ALLOWED_FORM_DETAILS = new Set(["무선제본", "양장본", "보드북"]);
+
+export const SOURCES = [
+  {
+    id: "kpipa",
+    label: "출판유통통합전산망 화제의 책 200선",
+    cap: 20,
+    domain: "bnk.kpipa.or.kr",
+    collector: collectKpipa,
+  },
+  {
+    id: "kyobo",
+    label: "교보문고",
+    cap: 15,
+    domain: "product.kyobobook.co.kr",
+  },
+  {
+    id: "yes24",
+    label: "YES24",
+    cap: 15,
+    domain: "yes24.com",
+    collector: collectYes24,
+  },
+  {
+    id: "hani",
+    label: "한겨레 책과 생각",
+    cap: 5,
+    domain: "hani.co.kr",
+  },
+  {
+    id: "donga",
+    label: "동아일보 금주의 신간",
+    cap: 5,
+    domain: "donga.com",
+  },
+  {
+    id: "nlk",
+    label: "국립중앙도서관 사서추천도서",
+    cap: 5,
+    domain: "nl.go.kr",
+    collector: collectNlk,
+  },
+  {
+    id: "nlcy",
+    label: "국립어린이청소년도서관 사서추천도서",
+    cap: 5,
+    domain: "nlcy.go.kr",
+    collector: collectNlcy,
+  },
+  {
+    id: "data4library",
+    label: "도서관 정보나루 인기대출도서",
+    cap: 5,
+    domain: "data4library.kr",
+  },
+];
+
+const RESERVE_SOURCES = [
+  { id: "aladin", label: "알라딘", domain: "aladin.co.kr", cap: 10 },
+  { id: "ypbooks", label: "영풍문고", domain: "ypbooks.co.kr", cap: 10 },
+];
 
 function required(name) {
   const value = process.env[name];
@@ -33,8 +102,50 @@ function required(name) {
   return value;
 }
 
-function normalizeIsbn(value = "") {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url, options = {}, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          "User-Agent": USER_AGENT,
+          "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.5",
+          ...(options.headers || {}),
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${(await response.text()).slice(0, 180)}`);
+      }
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await sleep(500 * 2 ** (attempt - 1));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw lastError;
+}
+
+function cleanText(value = "") {
+  return String(value).replace(/\s+/g, " ").trim();
+}
+
+export function normalizeIsbn(value = "") {
   return String(value).replace(/[^0-9Xx]/g, "").toUpperCase();
+}
+
+function normalizeDate(value = "") {
+  const digits = String(value).replace(/[^0-9]/g, "");
+  return digits.length >= 8 ? digits.slice(0, 8) : digits;
 }
 
 function normalizeKey(value = "") {
@@ -51,74 +162,298 @@ function dedupKey(candidate) {
     : `title:${normalizeKey(candidate.title)}|${normalizeKey(candidate.author)}`;
 }
 
-function parseDiscovery(text, genre) {
-  const rows = [];
-  for (const sourceLine of String(text || "").split("\n")) {
-    const line = sourceLine.replace(/^[\s\-*\d.)]+/, "").trim();
-    if (!line.includes("|")) continue;
-    const parts = line.split("|").map((part) => part.trim());
-    const [title, author, publisher, isbnRaw, pubdateRaw, sourcesRaw, ...noteParts] = parts;
-    if (!title || /^(제목|title)$/i.test(title)) continue;
-    const isbn = normalizeIsbn(isbnRaw);
-    rows.push({
-      title,
-      author: author && author !== "미상" ? author : "",
-      publisher: publisher && publisher !== "미상" ? publisher : "",
-      isbn: /^\d{13}$/.test(isbn) ? isbn : "",
-      pubdate: pubdateRaw && pubdateRaw !== "미상" ? pubdateRaw.replace(/[^0-9]/g, "") : "",
-      genre,
-      sources: (sourcesRaw || "")
-        .split(/[,;/·]/)
-        .map((value) => value.trim())
-        .filter((value) => value && value !== "미상"),
-      popnote: noteParts.join(" | ").trim(),
-    });
-  }
-  return rows.slice(0, GENRE_CAP);
+function candidateFor(source, fields) {
+  return {
+    title: cleanText(fields.title),
+    author: cleanText(fields.author),
+    publisher: cleanText(fields.publisher),
+    isbn: /^\d{13}$/.test(normalizeIsbn(fields.isbn)) ? normalizeIsbn(fields.isbn) : "",
+    pubdate: normalizeDate(fields.pubdate),
+    genre: cleanText(fields.genre),
+    sources: [source.label],
+    source_urls: [...new Set([fields.source_url].filter(Boolean))],
+    popnote: cleanText(fields.popnote || `${source.label} 수록`),
+    collection_method: fields.collection_method || "direct",
+  };
 }
 
-async function discoverGenre(genre) {
+export function parseYes24Html(html, source = SOURCES.find((item) => item.id === "yes24")) {
+  const $ = cheerio.load(html);
+  const rows = [];
+  $("li .itemUnit").each((_, element) => {
+    const item = $(element);
+    const link = item.find("a.gd_name").first();
+    const href = link.attr("href");
+    const priceText = item.find(".info_price").first().text();
+    rows.push(
+      candidateFor(source, {
+        title: link.attr("title") || link.text(),
+        author: item.find(".info_auth").first().text().replace(/\s*저\s*$/, ""),
+        publisher: item.find(".info_pub").first().text(),
+        source_url: href ? new URL(href, "https://www.yes24.com").href : source.url,
+        popnote: cleanText(`YES24 신상품 ${priceText}`),
+      }),
+    );
+  });
+  return rows.filter((item) => item.title).slice(0, source.cap);
+}
+
+async function collectYes24(source) {
+  const url = "https://www.yes24.com/Product/Category/NewProduct?categoryNumber=001";
+  const html = await (await fetchWithRetry(url)).text();
+  return parseYes24Html(html, { ...source, url });
+}
+
+export function parseNlkHtml(html, source = SOURCES.find((item) => item.id === "nlk")) {
+  const $ = cheerio.load(html);
+  const rows = [];
+  $("li.uccst14_item").each((_, element) => {
+    const item = $(element);
+    const title = item.find("strong.title").first();
+    const detailHref = item.find("a[href]").first().attr("href");
+    rows.push(
+      candidateFor(source, {
+        title: title.attr("title") || title.text(),
+        author: item.find("dd.author").first().text(),
+        publisher: item.find("dd.publisher").first().text(),
+        pubdate: item.find("dd.year").first().text(),
+        genre: item.find(".category").first().text(),
+        source_url: detailHref ? new URL(detailHref, "https://www.nl.go.kr").href : source.url,
+        popnote: `국립중앙도서관 ${cleanText(item.find(".date").first().text())} 사서추천`,
+      }),
+    );
+  });
+  return rows.filter((item) => item.title).slice(0, source.cap);
+}
+
+async function collectNlk(source) {
+  const url = "https://www.nl.go.kr/NL/contents/N20500000000.do";
+  const html = await (await fetchWithRetry(url)).text();
+  return parseNlkHtml(html, { ...source, url });
+}
+
+export function parseNlcyHtml(html, source = SOURCES.find((item) => item.id === "nlcy")) {
+  const $ = cheerio.load(html);
+  const rows = [];
+  const seen = new Set();
+
+  $("[class*=book], [class*=recommend], li, article").each((_, element) => {
+    const item = $(element);
+    const text = cleanText(item.text());
+    if (!text.includes("추천사서") || !text.includes("도서정보")) return;
+    const image = item.find("img[alt]").first();
+    const title =
+      cleanText(image.attr("alt")).replace(/\s*\(\d{4}년\s*\d{1,2}월\s*추천도서\)\s*$/, "") ||
+      cleanText(item.find("strong, .title").first().text());
+    if (!title || seen.has(normalizeKey(title))) return;
+    const infoMatch = text.match(/도서정보\s*(.+?)(?:\s*책소개|\s*자료상세보기|$)/);
+    const info = infoMatch?.[1] || "";
+    const parts = info.split("|").map(cleanText);
+    rows.push(
+      candidateFor(source, {
+        title,
+        author: parts[0],
+        publisher: parts[1],
+        pubdate: parts[2],
+        genre: text.match(/주제구분\s*([^\s]+)/)?.[1] || "어린이·청소년",
+        source_url: source.url,
+        popnote: `국립어린이청소년도서관 사서추천`,
+      }),
+    );
+    seen.add(normalizeKey(title));
+  });
+
+  // 페이지 개편으로 컨테이너 클래스가 바뀐 경우 이미지 alt를 안전한 최소 정보로 사용한다.
+  if (rows.length === 0) {
+    $("img[alt*='추천도서']").each((_, element) => {
+      const image = $(element);
+      const title = cleanText(image.attr("alt")).replace(/\s*\(\d{4}년\s*\d{1,2}월\s*추천도서\)\s*$/, "");
+      if (!title || seen.has(normalizeKey(title))) return;
+      rows.push(
+        candidateFor(source, {
+          title,
+          genre: "어린이·청소년",
+          source_url: source.url,
+          popnote: "국립어린이청소년도서관 사서추천",
+        }),
+      );
+      seen.add(normalizeKey(title));
+    });
+  }
+  return rows.slice(0, source.cap);
+}
+
+async function collectNlcy(source) {
+  const url = "https://www.nlcy.go.kr/NLCY/contents/C10600000000.do";
+  const html = await (await fetchWithRetry(url)).text();
+  return parseNlcyHtml(html, { ...source, url });
+}
+
+export function parseKpipaPdfText(text, source = SOURCES.find((item) => item.id === "kpipa"), sourceUrl = "") {
+  const rows = [];
+  for (const line of String(text).split(/\r?\n/)) {
+    const match = line.match(/^\s*(\d{1,3})\s*(.+?)(97[89]\d{10})(.*)$/);
+    if (!match) continue;
+    const [, rank, rawTitle, isbn, remainder] = match;
+    const title = cleanText(rawTitle);
+    if (!title || Number(rank) > 200) continue;
+    if (/수능|기출문제|평가문제집|자습서|토익|쎈\s|오투중등|개뿔중학|디딤돌 초등/.test(title)) continue;
+    rows.push(
+      candidateFor(source, {
+        title,
+        isbn,
+        source_url: sourceUrl,
+        popnote: `출판유통통합전산망 화제의 책 ${rank}위${cleanText(remainder) ? ` · ${cleanText(remainder)}` : ""}`,
+      }),
+    );
+  }
+  return rows.slice(0, source.cap);
+}
+
+async function collectKpipa(source) {
+  const listUrl = "https://bnk.kpipa.or.kr/home/v3/helpdesk/hlpBbsNoticeBoardList";
+  const listHtml = await (await fetchWithRetry(listUrl)).text();
+  const $ = cheerio.load(listHtml);
+  let sequence = "";
+  $(".board-list-item").each((_, element) => {
+    if (sequence) return;
+    const item = $(element);
+    if (!/화제의 책\s*200선/.test(cleanText(item.text()))) return;
+    sequence = item.attr("onclick")?.match(/fnBbsNoticeBoardDetailView\('([^']+)'/)?.[1] || "";
+  });
+  if (!sequence) throw new Error("최신 '화제의 책 200선' 공지를 찾지 못했습니다.");
+
+  const detailUrl =
+    `https://bnk.kpipa.or.kr/home/v3/helpdesk/hlpBbsNoticeBoardDetailView/seq_${sequence}`;
+  const detailHtml = await (await fetchWithRetry(detailUrl)).text();
+  const pdfPath =
+    detailHtml.match(/['"]([^'"]+\.pdf)['"]/i)?.[1] ||
+    detailHtml.match(/(\/files\/board\/[^"'<> ]+\.pdf)/i)?.[1];
+  if (!pdfPath) throw new Error("화제의 책 PDF 첨부파일을 찾지 못했습니다.");
+  const pdfUrl = new URL(pdfPath, "https://bnk.kpipa.or.kr").href;
+  const buffer = Buffer.from(await (await fetchWithRetry(pdfUrl)).arrayBuffer());
+  const parsed = await pdfParse(buffer);
+  return parseKpipaPdfText(parsed.text, { ...source, url: detailUrl }, pdfUrl);
+}
+
+export function parseAiDiscovery(text, source, limit = source.cap) {
+  const content = String(text || "").replace(/```(?:json)?|```/gi, "").trim();
+  const start = content.indexOf("[");
+  const end = content.lastIndexOf("]");
+  if (start < 0 || end <= start) throw new Error("AI 보완 결과에서 JSON 배열을 찾지 못했습니다.");
+  const parsed = JSON.parse(content.slice(start, end + 1));
+  if (!Array.isArray(parsed)) throw new Error("AI 보완 결과가 배열이 아닙니다.");
+  return parsed
+    .map((item) => {
+      let sourceUrl = "";
+      try {
+        const parsedUrl = new URL(item.source_url);
+        const hostname = parsedUrl.hostname.toLowerCase();
+        if (hostname === source.domain || hostname.endsWith(`.${source.domain}`)) {
+          sourceUrl = parsedUrl.href;
+        }
+      } catch {
+        // 지정 출처 URL이 확인되지 않은 항목은 아래 filter에서 제외한다.
+      }
+      return candidateFor(source, {
+        title: item.title,
+        author: item.author,
+        publisher: item.publisher,
+        isbn: item.isbn,
+        pubdate: item.pubdate,
+        genre: item.genre,
+        source_url: sourceUrl,
+        popnote: item.reason || `${source.label} 수록`,
+        collection_method: "ai_web_fallback",
+      });
+    })
+    .filter((item) => item.title && item.source_urls.length > 0)
+    .slice(0, limit);
+}
+
+async function discoverSourceWithAi(source, limit) {
+  if (SKIP_AI || limit <= 0) return [];
   const system = [
-    "너는 공공도서관 수서 사서 보조다.",
-    "웹 검색으로 실제 출간이 확인된 국내 신간만 제시한다.",
-    "서점 베스트셀러·출판사 신간·언론 서평·공공기관 추천·북튜버 및 독서 인플루언서 추천을 고르게 탐색한다.",
-    "존재가 불확실한 책이나 학술보고서·논문·정부간행물·자가출판·전자책·외국서적은 넣지 않는다.",
-    "각 도서를 정확히 한 줄로, 필드는 파이프(|)로 구분하고 다른 설명은 쓰지 않는다.",
+    "너는 한국 공공도서관 수서 사서 보조다.",
+    "지정된 출처의 실제 공개 페이지만 웹 검색하고, 거기에 명시된 국내 종이책만 반환한다.",
+    "책 제목·ISBN을 추측하거나 다른 출처의 책을 섞지 않는다.",
+    "전자책·외국서적·학술보고서·정부간행물·자가출판·세트·정가 5만원 이상은 제외한다.",
+    "설명 없이 JSON 배열만 출력한다.",
   ].join(" ");
   const user = [
-    `최근 6개월에 국내 출간된 ${genre} 분야의 대중적으로 인기 있거나 화제성이 높은 일반 단행본을 최대 ${GENRE_CAP}종 찾아라.`,
-    "동일한 도서를 여러 곳이 추천했다면 실제 매체·채널·서점·출판사 이름을 모두 적어라.",
-    "ISBN은 검색 중 확인된 13자리만 쓰고 확실하지 않으면 미상으로 둔다. 추측하지 않는다.",
-    "형식:",
-    "제목 | 저자 | 출판사 | ISBN13(모르면 미상) | 출간일 YYYY-MM-DD(모르면 미상) | 추천출처명(쉼표 구분) | 인기·추천 근거 한 구절",
+    `출처: ${source.label}`,
+    `검색 허용 도메인: ${source.domain}`,
+    `목표: 최신 신간·추천·인기대출 도서 중 서로 다른 책 최대 ${limit}종`,
+    "언론사는 기사 제목이 아니라 기사에서 실제로 소개한 책을 추출한다.",
+    "각 항목 형식:",
+    '{"title":"","author":"","publisher":"","isbn":"","pubdate":"YYYY-MM-DD","genre":"","source_url":"","reason":""}',
   ].join("\n");
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetchWithRetry(
+        OPENROUTER_URL,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${required("OPENROUTER_API_KEY")}`,
+            "HTTP-Referer": "https://librar-ai-agents.vercel.app",
+            "X-Title": "LibrarAI B-01 Source Harvester",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            temperature: 0.1,
+            max_tokens: Math.max(700, Math.min(1800, 450 + limit * 85)),
+            stream: false,
+            plugins: [{ id: "web", engine: "native", search_prompt: `site:${source.domain}` }],
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: user },
+            ],
+          }),
+        },
+        1,
+      );
+      const data = await response.json();
+      return parseAiDiscovery(data.choices?.[0]?.message?.content || "", source, limit);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) await sleep(750 * 2 ** (attempt - 1));
+    }
+  }
+  throw lastError;
+}
 
-  const response = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${required("OPENROUTER_API_KEY")}`,
-      "HTTP-Referer": "https://librar-ai-agents.vercel.app",
-      "X-Title": "LibrarAI B-01 Weekly Harvester",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.3,
-      // OpenRouter는 잔여 크레딧을 max_tokens 기준으로 선승인한다. 실제 12종 한 줄 목록은
-      // 1,800토큰이면 충분하며, 상한을 크게 잡으면 내용 생성 전 HTTP 402가 날 수 있다.
-      max_tokens: 1800,
-      stream: false,
-      plugins: [{ id: "web", engine: "native" }],
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    }),
-  });
-  const body = await response.text();
-  if (!response.ok) throw new Error(`${genre} 발굴 실패(HTTP ${response.status}): ${body.slice(0, 300)}`);
-  const data = JSON.parse(body);
-  return parseDiscovery(data.choices?.[0]?.message?.content || "", genre);
+async function collectSource(source) {
+  let direct = [];
+  let directError = "";
+  if (source.collector) {
+    try {
+      direct = await source.collector(source);
+    } catch (error) {
+      directError = error.message;
+      console.warn(`${source.label} 직접 수집 실패: ${error.message}`);
+    }
+  }
+  const directMerged = mergeCandidates(direct).slice(0, source.cap);
+  let fallback = [];
+  const missing = source.cap - directMerged.length;
+  if (missing > 0 && !SKIP_AI) {
+    try {
+      fallback = await discoverSourceWithAi(source, missing);
+    } catch (error) {
+      console.warn(`${source.label} AI 보완 실패: ${error.message}`);
+    }
+  }
+  const candidates = mergeCandidates([...directMerged, ...fallback]).slice(0, source.cap);
+  return {
+    source,
+    candidates,
+    direct: directMerged.length,
+    ai_fallback: Math.max(0, candidates.length - directMerged.length),
+    direct_error: directError || null,
+  };
 }
 
 async function seojiLookup(candidate) {
@@ -131,12 +466,11 @@ async function seojiLookup(candidate) {
   if (candidate.isbn) params.set("isbn", candidate.isbn);
   else params.set("title", candidate.title);
 
-  const response = await fetch(`${SEOJI_URL}?${params.toString()}`);
-  if (!response.ok) return candidate;
+  const response = await fetchWithRetry(`${SEOJI_URL}?${params.toString()}`, {}, 3);
   const data = await response.json();
   const docs = Array.isArray(data.docs) ? data.docs : [];
   const doc = candidate.isbn
-    ? docs.find((item) => normalizeIsbn(item.EA_ISBN) === candidate.isbn)
+    ? docs.find((item) => normalizeIsbn(item.EA_ISBN) === normalizeIsbn(candidate.isbn))
     : docs.find((item) => normalizeKey(item.TITLE) === normalizeKey(candidate.title));
   if (!doc) return candidate;
 
@@ -147,17 +481,17 @@ async function seojiLookup(candidate) {
   if (formDetail && !ALLOWED_FORM_DETAILS.has(formDetail)) return null;
   if (/세트|전\s*\d+\s*권/.test(doc.TITLE || candidate.title)) return null;
 
-  const isbn = normalizeIsbn(doc.EA_ISBN || candidate.isbn);
   const priceRaw = String(doc.PRE_PRICE || "").replace(/[^0-9]/g, "");
   const price = priceRaw ? Number(priceRaw) : null;
-  if (price && price >= 50000) return null;
+  if (price && price >= 50_000) return null;
+  const isbn = normalizeIsbn(doc.EA_ISBN || candidate.isbn);
   return {
     ...candidate,
     isbn: /^\d{13}$/.test(isbn) ? isbn : candidate.isbn,
-    title: String(doc.TITLE || candidate.title).trim(),
-    author: String(doc.AUTHOR || candidate.author || "").trim(),
-    publisher: String(doc.PUBLISHER || candidate.publisher || "").trim(),
-    pubdate: String(doc.PUBLISH_PREDATE || doc.REAL_PUBLISH_DATE || candidate.pubdate || "").replace(/[^0-9]/g, ""),
+    title: cleanText(doc.TITLE || candidate.title),
+    author: cleanText(doc.AUTHOR || candidate.author),
+    publisher: cleanText(doc.PUBLISHER || candidate.publisher),
+    pubdate: normalizeDate(doc.PUBLISH_PREDATE || doc.REAL_PUBLISH_DATE || candidate.pubdate),
     price,
     formDetail,
     verified: true,
@@ -182,21 +516,78 @@ async function mapLimited(items, limit, mapper) {
   return results;
 }
 
-function mergeCandidates(candidates) {
+export function mergeCandidates(candidates) {
   const byKey = new Map();
   for (const candidate of candidates.filter(Boolean)) {
     const key = dedupKey(candidate);
     if (!candidate.title || key === "title:|") continue;
     const existing = byKey.get(key);
     if (!existing) {
-      byKey.set(key, { ...candidate, dedup_key: key, sources: [...new Set(candidate.sources || [])] });
+      byKey.set(key, {
+        ...candidate,
+        dedup_key: key,
+        sources: [...new Set(candidate.sources || [])],
+        source_urls: [...new Set(candidate.source_urls || [])],
+      });
       continue;
     }
     existing.sources = [...new Set([...(existing.sources || []), ...(candidate.sources || [])])];
-    existing.popnote = [existing.popnote, candidate.popnote].filter(Boolean).join(" / ");
+    existing.source_urls = [...new Set([...(existing.source_urls || []), ...(candidate.source_urls || [])])];
+    existing.popnote = [...new Set([existing.popnote, candidate.popnote].filter(Boolean))].join(" / ");
     if (!existing.isbn && candidate.isbn) existing.isbn = candidate.isbn;
+    if (!existing.author && candidate.author) existing.author = candidate.author;
+    if (!existing.publisher && candidate.publisher) existing.publisher = candidate.publisher;
   }
   return [...byKey.values()];
+}
+
+function rankCandidates(candidates) {
+  return [...candidates].sort((a, b) => {
+    const sourceDifference = (b.sources?.length || 0) - (a.sources?.length || 0);
+    if (sourceDifference) return sourceDifference;
+    const verifiedDifference = Number(Boolean(b.verified)) - Number(Boolean(a.verified));
+    if (verifiedDifference) return verifiedDifference;
+    return String(b.pubdate || "").localeCompare(String(a.pubdate || ""));
+  });
+}
+
+export function selectFinalCandidates(candidates, max = MAX_STORED) {
+  const ranked = rankCandidates(candidates);
+  const selected = [];
+  const selectedKeys = new Set();
+  const orderedSources = [...SOURCES, ...RESERVE_SOURCES];
+  const queues = orderedSources.map((source) => ({
+    source,
+    items: ranked.filter((candidate) => candidate.sources?.includes(source.label)),
+    cursor: 0,
+  }));
+
+  // 출처별로 한 종씩 순환해 소수 할당 언론·공공기관 출처가 잘리지 않게 한다.
+  while (selected.length < max) {
+    let addedThisRound = false;
+    for (const queue of queues) {
+      while (queue.cursor < queue.items.length) {
+        const candidate = queue.items[queue.cursor++];
+        const key = dedupKey(candidate);
+        if (selectedKeys.has(key)) continue;
+        selected.push(candidate);
+        selectedKeys.add(key);
+        addedThisRound = true;
+        break;
+      }
+      if (selected.length >= max) break;
+    }
+    if (!addedThisRound) break;
+  }
+
+  for (const candidate of ranked) {
+    if (selected.length >= max) break;
+    const key = dedupKey(candidate);
+    if (selectedKeys.has(key)) continue;
+    selected.push(candidate);
+    selectedKeys.add(key);
+  }
+  return selected;
 }
 
 async function upsertCandidates(candidates) {
@@ -212,8 +603,6 @@ async function upsertCandidates(candidates) {
   const client = await pool.connect();
   try {
     await client.query("begin");
-    // 배포 환경에 마이그레이션이 아직 적용되지 않았어도 첫 실행이 스스로 복구되도록 한다.
-    // 모두 IF NOT EXISTS/멱등 구문이라 이후 주간 실행에서는 기존 테이블을 그대로 사용한다.
     await client.query(`
       create table if not exists public.acquisition_candidates (
         id bigint generated always as identity primary key,
@@ -235,12 +624,9 @@ async function upsertCandidates(candidates) {
         last_seen timestamptz not null default now(),
         metadata jsonb not null default '{}'::jsonb
       );
-      create index if not exists acq_cand_status_idx
-        on public.acquisition_candidates (status);
-      create index if not exists acq_cand_pubdate_idx
-        on public.acquisition_candidates (pubdate);
-      create index if not exists acq_cand_verified_idx
-        on public.acquisition_candidates (verified);
+      create index if not exists acq_cand_status_idx on public.acquisition_candidates (status);
+      create index if not exists acq_cand_pubdate_idx on public.acquisition_candidates (pubdate);
+      create index if not exists acq_cand_verified_idx on public.acquisition_candidates (verified);
       create unique index if not exists acq_cand_isbn_uidx
         on public.acquisition_candidates (isbn) where isbn is not null;
       alter table public.acquisition_candidates enable row level security;
@@ -295,7 +681,12 @@ async function upsertCandidates(candidates) {
           Math.max(1, (candidate.sources || []).length),
           candidate.popnote || null,
           Boolean(candidate.verified),
-          JSON.stringify({ harvested_at: new Date().toISOString(), model: MODEL }),
+          JSON.stringify({
+            harvested_at: new Date().toISOString(),
+            model: MODEL,
+            source_urls: candidate.source_urls || [],
+            collection_method: candidate.collection_method || "direct",
+          }),
         ],
       );
     }
@@ -310,44 +701,83 @@ async function upsertCandidates(candidates) {
 }
 
 async function main() {
-  required("OPENROUTER_API_KEY");
-  required("SEOJI_API_KEY_NL_DIRECT");
-  required("SUPABASE_DB_PASSWORD");
+  if (!SKIP_DB) required("SUPABASE_DB_PASSWORD");
+  if (!SKIP_SEOJI) required("SEOJI_API_KEY_NL_DIRECT");
 
-  const discovered = [];
-  for (let index = 0; index < GENRES.length; index += 2) {
-    const pair = GENRES.slice(index, index + 2);
-    const results = await Promise.allSettled(pair.map(discoverGenre));
-    results.forEach((result, pairIndex) => {
-      if (result.status === "fulfilled") discovered.push(...result.value);
-      else console.warn(`${pair[pairIndex]} 발굴 실패: ${result.reason?.message || result.reason}`);
-    });
+  const results = await mapLimited(SOURCES, 4, collectSource);
+  const discovered = results.flatMap((result) => result.candidates);
+  let merged = mergeCandidates(discovered);
+
+  // 1차 출처에서 40종 미만이면 서점 예비 출처만 필요한 만큼 보완한다.
+  const reserveResults = [];
+  if (merged.length < MIN_SUCCESS && !SKIP_AI) {
+    for (const reserve of RESERVE_SOURCES) {
+      const needed = Math.min(reserve.cap, MIN_SUCCESS - merged.length);
+      if (needed <= 0) break;
+      try {
+        const candidates = await discoverSourceWithAi(reserve, needed);
+        reserveResults.push({
+          source: reserve,
+          candidates,
+          direct: 0,
+          ai_fallback: candidates.length,
+          direct_error: null,
+        });
+        merged = mergeCandidates([...merged, ...candidates]);
+      } catch (error) {
+        console.warn(`${reserve.label} 예비 수집 실패: ${error.message}`);
+      }
+    }
   }
 
-  const merged = mergeCandidates(discovered);
-  const enriched = await mapLimited(merged, 2, seojiLookup);
-  const finalCandidates = mergeCandidates(enriched.filter(Boolean));
-  await upsertCandidates(finalCandidates);
+  const enriched = SKIP_SEOJI ? merged : await mapLimited(merged, 4, seojiLookup);
+  const finalCandidates = selectFinalCandidates(mergeCandidates(enriched.filter(Boolean)), MAX_STORED);
+  if (!SKIP_DB) await upsertCandidates(finalCandidates);
 
   const verified = finalCandidates.filter((candidate) => candidate.verified).length;
+  const allResults = [...results, ...reserveResults];
   const summary = {
     harvested_at: new Date().toISOString(),
-    discovered: discovered.length,
+    target: `${MIN_SUCCESS}-${MAX_STORED}`,
+    raw_discovered: discovered.length + reserveResults.flatMap((item) => item.candidates).length,
     deduplicated: merged.length,
     stored: finalCandidates.length,
     seoji_verified: verified,
     unverified: finalCandidates.length - verified,
+    source_coverage: allResults.filter((item) => item.candidates.length > 0).length,
+    sources: Object.fromEntries(
+      allResults.map((item) => [
+        item.source.id,
+        {
+          target: item.source.cap,
+          collected: item.candidates.length,
+          direct: item.direct,
+          ai_fallback: item.ai_fallback,
+          direct_error: item.direct_error,
+        },
+      ]),
+    ),
+    dry_run: SKIP_DB,
   };
   console.log(JSON.stringify(summary, null, 2));
-  if (finalCandidates.length === 0) {
+
+  if (finalCandidates.length < PARTIAL_SUCCESS) {
     throw new Error(
-      "추천도서 후보가 0건입니다. 모든 발굴 요청의 오류 로그를 확인하세요. " +
-      "OpenRouter HTTP 402이면 크레딧 충전 후 다시 실행해야 합니다.",
+      `후보가 ${finalCandidates.length}종으로 실패 기준 ${PARTIAL_SUCCESS}종에 미달했습니다. ` +
+      "출처별 오류와 OpenRouter 크레딧을 확인하세요.",
+    );
+  }
+  if (finalCandidates.length < MIN_SUCCESS) {
+    console.warn(
+      `::warning::후보가 ${finalCandidates.length}종으로 부분 성공입니다. 목표 최소 ${MIN_SUCCESS}종에 미달했습니다.`,
     );
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+const entryUrl = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
+if (import.meta.url === entryUrl) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

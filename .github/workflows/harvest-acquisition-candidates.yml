@@ -30,9 +30,15 @@ jobs:
       - name: 의존성 설치
         run: npm ci
 
+      - name: 수집 파서 테스트
+        run: npm run test:harvest
+
       - name: 추천도서 취합 및 후보 풀 적재
         run: npm run harvest:acquisition
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SEOJI_API_KEY_NL_DIRECT: ${{ secrets.SEOJI_API_KEY_NL_DIRECT }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          B01_HARVEST_MIN_SUCCESS: "40"
+          B01_HARVEST_PARTIAL_SUCCESS: "30"
+          B01_HARVEST_MAX_STORED: "50"

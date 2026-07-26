@@ -1,11 +1,14 @@
 {
   "scripts": {
-    "harvest:acquisition": "node scripts/harvest-acquisition-candidates.mjs"
+    "harvest:acquisition": "node scripts/harvest-acquisition-candidates.mjs",
+    "test:harvest": "node --test tests/harvest-acquisition-candidates.test.mjs"
   },
   "devDependencies": {
     "playwright": "^1.60.0"
   },
   "dependencies": {
+    "cheerio": "^1.1.2",
+    "pdf-parse": "^1.1.1",
     "pg": "^8.22.0"
   }
 }
