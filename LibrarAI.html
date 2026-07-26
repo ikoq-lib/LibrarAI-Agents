@@ -161,8 +161,29 @@
     // 지도·기타 등)는 후보에서 제외한다. 2026-07-18 사서 지시: 전자책 제외(EBOOK_YN=N) + 종이책(FORM)만 수집.
     const B01_ALLOWED_FORM_DETAILS = ["무선제본", "양장본", "보드북"];
 
-    // OpenRouter 경유 고정 모델 (배포 시 다이렉트 API로 전환 예정)
-    const DEFAULT_CHAT_MODEL = "anthropic/claude-sonnet-5";
+    // OpenRouter 경유 응답 모델 — 사이드바 하단 드롭다운에서 선택하며 선택값은 localStorage에 유지된다.
+    // (배포 시 다이렉트 API로 전환 예정)
+    // note는 컨텍스트 길이 · 100만 토큰당 입력/출력 USD. 2026-07-23 OpenRouter 카탈로그 기준이며,
+    // 전 모델 tools(도구 호출) 지원을 확인했다 — chief의 리프 위임이 도구 호출에 의존하므로 필수 조건이다.
+    const CHAT_MODELS = [
+      { id: "qwen/qwen3.7-plus",         label: "Qwen3.7 Plus",     note: "1M · $0.32 / $1.28" },
+      { id: "qwen/qwen3.7-max",          label: "Qwen3.7 Max",      note: "1M · $1.48 / $4.42" },
+      { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5",  note: "1M · $2 / $10" },
+      { id: "anthropic/claude-opus-4.8", label: "Claude Opus 4.8",  note: "1M · $5 / $25" },
+      { id: "openai/gpt-5.2",            label: "GPT-5.2",          note: "400K · $1.75 / $14" },
+      { id: "google/gemini-3.5-flash",   label: "Gemini 3.5 Flash", note: "1M · $1.5 / $9" },
+    ];
+    const DEFAULT_CHAT_MODEL = "qwen/qwen3.7-plus";
+
+    // 추론(reasoning) 토큰 상한 — 기본 모델 qwen3.7-plus는 추론이 기본 활성이고, 추론 토큰은 max_tokens의
+    // 제약을 받지 않아 호출당 3,000토큰 이상 발생한다(2026-07-23 실측: max_tokens 3000 요청에 총출력 4,563).
+    // 출력 요율($1.28/M)로 과금되므로 상한을 둔다. 실측 결과(예산 배분 프롬프트 1건 기준):
+    //   기본값 추론 3,309 / $0.0059  ·  max_tokens:256 추론 256 / $0.0014(76%↓)  ·  enabled:false 추론 0 / $0.0013
+    // reasoning.effort는 이 모델에서 값에 따른 차이가 없어("low" 2,712 vs "high" 2,708) 무시되는 것으로 확인 —
+    // 실제로 동작하는 노브는 max_tokens 뿐이다. Claude·GPT-5.2는 이 파라미터를 보내도 추론이 켜지지 않고(추론 0
+    // 유지), Gemini 3.5 Flash는 무시하므로 전역 전송해도 안전하다. 값을 0에 가깝게 낮출수록 저렴해지지만
+    // 판단이 개입하는 작업(chief ROUTE 위임·복본 판정·예산 매칭)의 품질이 떨어질 수 있다.
+    const REASONING_MAX_TOKENS = 512;
 
     // ── System Prompts ────────────────────────────────────────────
 
@@ -993,6 +1014,7 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
   - 첨부된 블록이 "(수집된 후보 없음)"이거나 유효 후보가 부족한 경우, 절대로 도서를 임의로 만들어 채우지 말고 그 사실을 있는 그대로 보고한 뒤 사서에게 재수집(네트워크·API 상태 확인) 또는 사서가 직접 후보 추가를 요청하세요. 목표 예산·건수를 채우지 못하더라도 실재하지 않는 항목으로 채우는 것보다 미달 상태를 보고하는 것이 항상 우선입니다.
 - FN-02 복본·균형·희망도서 교차 확인: 후보를 B-03(복본 판정)·B-05(장서균형 결핍지수)에 위임하고 결과를 반영, 희망도서 요청과 교차해 우선순위 상향
 - FN-03 선정 기준 점수화: 이용자수요 40%(희망도서·유사도서 대출) + 사회적관심도 25%(베스트셀러 순위) + 장서균형 25%(B-05 결핍지수) + 출판시의성 10%
+  - **사회적관심도(베스트셀러·화제성) 근거**: 사용자 메시지에 함께 첨부되는 "[Gemini 그라운딩 인기·화제성 신호]" 블록(웹 검색 기반, SEOJI 후보 한정)을 사회적관심도 점수의 근거로 사용합니다. 이 블록에 언급된 도서는 사회적관심도를 가산하되, **언급되지 않았다는 이유만으로 후보에서 제외하지 마십시오** — 인기 신호는 가중치일 뿐이며 균형·수요 등 다른 축으로도 선정될 수 있습니다. 블록이 "미확보"로 표시되면 사회적관심도는 중립 처리하고 나머지 축으로 점수화합니다. 이 블록 역시 SEOJI 후보 목록을 벗어난 도서를 지어내는 근거로 삼지 않습니다.
 - FN-04 예산 배분 초안: 점수 순 정렬, 희망도서는 상위 20% 이내 필수 포함, 단일 출판사 30%·동일 KDC 40% 초과 시 경고
 - FN-05 Excel 선정 목록 + 기안문 초안 생성 (hwpx): 사서가 선정 목록 확정을 요청하면 응답에 반드시 아래 "Excel 출력 형식"의 ===엑셀시작===~===엑셀끝=== 구분자로 선정 목록 표를 포함하십시오. 기안문도 함께 요청받았다면 ===기안문시작===~===기안문끝===(및 필요 시 ===첨부시작===~===첨부끝===)을 이어서 포함하십시오.
 - FN-06 사서 검토·승인 대기
@@ -2995,13 +3017,23 @@ ${extra}
 - 역할 경계: 각 DM이 취합한 산출물을 통합 문서로 **편집**합니다. ③도메인별 상세에는 리프 산출물 본문을 요약하지 말고 원문 그대로 포함하고, 표지·요약·escalations 절만 새로 작성합니다. 수치를 재계산하거나 escalation 내용을 재판단하지 않습니다(그대로 인용).
 - 오류가 난 DM 섹션은 "수집 실패: (사유)"로 표기하고 나머지로 문서를 완성합니다.
 
-**통합 계획서 골격 (월간/주간 공통):**
-①표지(문서 제목·대상 기간·작성: 기획업무팀 기획담당·작성일) ②요약(각 도메인 산출물에서 핵심 3~5줄 발췌) ③도메인별 계획 상세(DM-01~05 순, 각 DM이 취합한 리프 산출물 **본문을 요약 없이 그대로 포함**, 담당 업무 없는 도메인만 "해당 없음") ④예산 소요 개요(A-03 데이터 반영 — 주간 계획은 생략 가능) ⑤최고관리자 확인·승인 필요 항목(escalations 원문 인용·취합)
-self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합니다.
+**통합 문서 출력 형식 (사람이 읽는 보고서 + PDF 변환용) — 반드시 준수:**
+통합 문서 전체를 \`===보고서시작===\` 과 \`===보고서끝===\` 구분자로 감쌉니다. 그 안은 **(1) 1페이지 총괄 요약 보고서 → (2) 도메인별 상세 기획안** 순서로 구성하고, **페이지가 나뉘어야 하는 지점마다 단독 행으로 \`---\` 를 넣습니다**(뷰어에서 구분선, PDF에서 페이지 넘김으로 처리됨). 요약과 상세는 **동일한 공문서체 톤앤매너로 통일**합니다(경어체 개조식, 금액 ₩·콤마, 날짜 \`2026. 8. 1.\` 표기).
 
-**실적 결과보고 골격:** ①표지 ②요약(하위가 이미 판정한 이상 징후는 재계산 없이 ⚠️와 함께 인용) ③도메인별 실적 현황 ④통합 수치 분석(ASCII 차트 — 막대/선형, 축·단위는 한국어: 원, 권, 명, 회) ⑤종합 평가 및 제언 ⑥확인·승인 필요 항목
+\`===보고서시작===\` 안의 골격:
+■ **1페이지 총괄 요약**(첫 페이지 한 장에 담기도록 압축):
+  \`# [문서 제목 — 예: 2026년 8월 도서관 월간 업무계획]\`
+  이어서 \`- 대상 기간 / 작성: 기획업무팀 기획담당 / 작성일 [YYYY. M. D.]\`
+  \`## 총괄 요약\` — 도메인별 핵심 계획을 도메인당 1~2줄로 압축(전체 3~5줄 수준). 가능하면 "도메인 / 핵심 업무 / 예산 / 비고" 요약표 1개와 예산 소요 총계·최고관리자 확인 필요 항목 건수를 한눈에 제시.
+\`---\`
+■ **도메인별 상세 기획안**(DM-01~05 순, 각 도메인 사이에 \`---\` 페이지 구분):
+  \`## [DM-XX 도메인명] 상세 기획안\` 아래에 각 DM이 취합한 **리프 산출물 본문을 요약하지 말고 원문 그대로** 포함(담당 업무 없는 도메인만 "해당 없음"). self_tasks의 기획담당 고유 업무도 해당 위치에 직접 작성.
+\`---\`
+■ 마지막 페이지: \`## 예산 소요 개요\`(A-03 데이터 반영 — 주간 계획은 생략 가능) / \`## 최고관리자 확인·승인 필요 항목\`(escalations 원문 인용·취합)
 
-문서 말미에 "본 문서는 초안이며 최고관리자 검토·확정 전까지 확정본이 아닙니다."를 명시하십시오.
+**실적 결과보고**도 동일하게 \`===보고서시작===\`~\`===보고서끝===\`로 감싸며, **1페이지 총괄 요약**(하위가 판정한 이상 징후는 재계산 없이 ⚠️와 함께 인용) → \`---\` → 도메인별 실적 현황 → \`---\` → 통합 수치 분석(ASCII 차트 — 막대/선형, 축·단위 한국어: 원·권·명·회) → 종합 평가 및 제언 → 확인·승인 필요 항목 순으로 구성합니다.
+
+보고서 말미(\`===보고서끝===\` 직전)에 "본 문서는 초안이며 최고관리자 검토·확정 전까지 확정본이 아닙니다."를 명시하십시오. ⚠ 확인필요 미니 노트(===확인필요===)는 이 보고서 블록 **밖 맨 앞**에 그대로 둡니다.
 
 ## 확인 필요 미니 노트 (urgent escalation)
 집계 결과에 urgency가 "urgent"인 escalation이 있으면, 최종 응답 **맨 앞에** 항목당 1개씩 아래 블록을 출력하십시오(3~5줄, 내용은 하위 보고 원문 인용만 — 재판단 금지). 정식 기안문이 아니므로 hwpx 언급 없이 텍스트로만 씁니다.
@@ -3253,7 +3285,9 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
         }
         if (inTable) flushTable();
         const key = "l" + i;
-        if (line.startsWith("# ")) {
+        if (/^(-{3,}|\*{3,}|_{3,})$/.test(line.trim())) {
+          elements.push(<hr key={key} style={{ border: "none", borderTop: "1px dashed var(--line-strong)", margin: "16px 0" }} />);
+        } else if (line.startsWith("# ")) {
           elements.push(<h1 key={key} style={{ fontFamily: "var(--font-display)", fontWeight: "400", fontSize: "18px", margin: "14px 0 6px", color: "var(--ink)", borderBottom: "2px solid var(--chrome)", paddingBottom: "4px" }}>{line.slice(2)}</h1>);
         } else if (line.startsWith("## ")) {
           elements.push(<h2 key={key} style={{ fontFamily: "var(--font-display)", fontWeight: "400", fontSize: "15px", margin: "12px 0 5px", color: "var(--chrome)" }}>{line.slice(3)}</h2>);
@@ -3572,6 +3606,119 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
       );
     }
 
+    // ── 통합 보고서 → PDF 인쇄 ────────────────────────────────────
+    // chief-coordinator가 ===보고서시작===~===보고서끝===로 감싼 통합 계획서/결과보고를
+    // A4 인쇄용 HTML로 변환해 새 창에서 브라우저 인쇄(=PDF로 저장)한다. 한글은 벡터로
+    // 렌더되어 선택·검색 가능한 PDF가 나온다(래스터화 라이브러리 대비 안전). 단독 행 `---`는
+    // 페이지 넘김으로 처리한다.
+    const escapeReportHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const inlineReportMd = (s) => escapeReportHtml(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+
+    const reportMdToPrintHtml = (md) => {
+      const lines = (md || "").split("\n");
+      const out = [];
+      let i = 0, tbuf = [], inTable = false, inList = false;
+      const closeList = () => { if (inList) { out.push("</ul>"); inList = false; } };
+      const flushTable = () => {
+        if (!tbuf.length) { inTable = false; return; }
+        closeList();
+        const rows = parseMarkdownTableRows(tbuf);
+        let t = '<table class="rp-tbl">';
+        rows.forEach((row, ri) => {
+          t += "<tr>";
+          row.forEach(cell => { const T = ri === 0 ? "th" : "td"; t += `<${T}>${inlineReportMd(cell)}</${T}>`; });
+          t += "</tr>";
+        });
+        t += "</table>";
+        out.push(t); tbuf = []; inTable = false;
+      };
+      while (i < lines.length) {
+        const line = lines[i];
+        const tr = line.trim();
+        if (tr.startsWith("|") && tr.includes("|")) { inTable = true; tbuf.push(line); i++; continue; }
+        if (inTable) flushTable();
+        if (/^(-{3,}|\*{3,}|_{3,})$/.test(tr)) { closeList(); out.push('<div class="rp-break"></div>'); i++; continue; }
+        if (line.startsWith("# ")) { closeList(); out.push(`<h1>${inlineReportMd(line.slice(2))}</h1>`); }
+        else if (line.startsWith("## ")) { closeList(); out.push(`<h2>${inlineReportMd(line.slice(3))}</h2>`); }
+        else if (line.startsWith("### ")) { closeList(); out.push(`<h3>${inlineReportMd(line.slice(4))}</h3>`); }
+        else if (/^[-*]\s/.test(line)) { if (!inList) { out.push('<ul class="rp-ul">'); inList = true; } out.push(`<li>${inlineReportMd(line.replace(/^[-*]\s/, ""))}</li>`); }
+        else if (/^\d+\.\s/.test(line)) { closeList(); out.push(`<p class="rp-num">${inlineReportMd(line)}</p>`); }
+        else if (tr.startsWith("※")) { closeList(); out.push(`<p class="rp-note">${inlineReportMd(line)}</p>`); }
+        else if (tr === "") { if (!inList) out.push('<div class="rp-sp"></div>'); }
+        else { closeList(); out.push(`<p>${inlineReportMd(line)}</p>`); }
+        i++;
+      }
+      if (inTable) flushTable();
+      closeList();
+      return out.join("\n");
+    };
+
+    const REPORT_PRINT_CSS = `
+      @page { size: A4; margin: 20mm 18mm; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body { font-family: "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; color: #20242A; font-size: 11pt; line-height: 1.7; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .rp-doc { max-width: 800px; margin: 0 auto; padding: 24px; }
+      @media print { .rp-doc { max-width: none; padding: 0; } }
+      h1 { font-size: 20pt; font-weight: 700; text-align: center; margin: 6px 0 14px; padding-bottom: 12px; border-bottom: 2.5px solid #1E6E5C; color: #17322A; letter-spacing: -0.3px; }
+      h2 { font-size: 13.5pt; font-weight: 700; color: #1E6E5C; margin: 20px 0 8px; padding-left: 9px; border-left: 4px solid #1E6E5C; }
+      h3 { font-size: 11.5pt; font-weight: 700; color: #3a3f46; margin: 13px 0 5px; }
+      p { margin: 3px 0; }
+      p.rp-num { padding-left: 8px; }
+      p.rp-note { font-size: 9.5pt; color: #6b7078; margin: 5px 0; }
+      strong { font-weight: 700; }
+      ul.rp-ul { margin: 4px 0 4px 4px; padding-left: 18px; }
+      ul.rp-ul li { margin: 2px 0; line-height: 1.6; }
+      .rp-sp { height: 6px; }
+      .rp-break { break-after: page; page-break-after: always; height: 0; }
+      table.rp-tbl { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 9.5pt; }
+      table.rp-tbl th, table.rp-tbl td { border: 1px solid #C9CEC4; padding: 5px 8px; text-align: left; vertical-align: top; }
+      table.rp-tbl th { background: #EEF3F0; font-weight: 700; }
+      table.rp-tbl tr { break-inside: avoid; }
+      h1, h2, h3 { break-after: avoid; }
+    `;
+
+    const printReport = (reportMd, title) => {
+      const body = reportMdToPrintHtml(reportMd);
+      const win = window.open("", "_blank");
+      if (!win) { alert("팝업이 차단되어 PDF 창을 열 수 없습니다. 브라우저에서 팝업을 허용한 뒤 다시 시도해주세요."); return; }
+      const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeReportHtml(title)}</title><style>${REPORT_PRINT_CSS}</style></head><body><div class="rp-doc">${body}</div><script>window.onload=function(){setTimeout(function(){window.focus();window.print();},350);};<\/script></body></html>`;
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+    };
+
+    // ── ReportDocument ───────────────────────────────────────────
+    // ===보고서시작===~===보고서끝===를 사람이 읽는 문서 형태(표지+요약+상세)로 렌더하고
+    // 상단에 PDF 다운로드 버튼을 붙인다. 블록 앞뒤 일반 텍스트는 마크다운으로 렌더한다.
+    const REPORT_BLOCK_RE = /===보고서시작===([\s\S]*?)===보고서끝===/;
+    function ReportDocument({ content }) {
+      const m = content.match(REPORT_BLOCK_RE);
+      if (!m) return <MarkdownRenderer text={content} />;
+      const report = m[1].trim();
+      const before = content.slice(0, m.index).trim();
+      const after = content.slice(m.index + m[0].length).trim();
+      const titleM = report.match(/^#\s+(.+)$/m);
+      const title = (titleM ? titleM[1].trim() : "업무계획 보고서").slice(0, 60);
+      return (
+        <div>
+          {before ? <div style={{ marginBottom: "14px" }}><MarkdownRenderer text={before} /></div> : null}
+          <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius)", overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--bg-sunken)", borderBottom: "1px solid var(--line)", padding: "8px 12px" }}>
+              <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--chrome)" }}>📄 통합 보고서 · {title}</span>
+              <button onClick={() => printReport(report, title)}
+                style={{ marginLeft: "auto", padding: "5px 12px", border: "1px solid var(--line-strong)", borderRadius: "6px", background: "white", color: "var(--chrome)", fontSize: "12px", fontWeight: "700", cursor: "pointer", fontFamily: "inherit" }}
+              >⬇ PDF 다운로드</button>
+            </div>
+            <div style={{ padding: "26px 32px", background: "white" }}>
+              <MarkdownRenderer text={report} />
+            </div>
+          </div>
+          {after ? <div style={{ marginTop: "14px" }}><MarkdownRenderer text={after} /></div> : null}
+        </div>
+      );
+    }
+
     // 총괄 지시(오케스트레이션) 전용 접미사 — systemPromptFor()에는 넣지 않고
     // 러너 호출부에서만 개별 에이전트 프롬프트 뒤에 붙인다.
     // 목적: 기존 "⚠ = 사서 확인 필요" 관례를 질문/선택 요청 시점까지 명시적으로 확장하고,
@@ -3669,6 +3816,20 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
       const [collapsedDomains, setCollapsedDomains] = useState({});
       const [advancedOpen, setAdvancedOpen] = useState(false); // 사이드바 '직접 실행(고급)' — 개별 DM/리프 탭은 기본 숨김(v4 단일 접점)
       const [activeTab, setActiveTab] = useState("planner"); // current agent tab
+
+      // ── 응답 LLM 모델 ──
+      // 사이드바 하단 드롭다운에서 바꾸며 새로고침 후에도 유지된다. 저장값이 CHAT_MODELS에 없으면
+      // (목록에서 뺀 모델이 남아 있는 경우) 기본값으로 되돌린다 — 존재하지 않는 모델로 호출해 404가 나는 것을 막는다.
+      const [chatModel, setChatModel] = useState(() => {
+        try {
+          const saved = localStorage.getItem("librarai_chat_model");
+          return CHAT_MODELS.some(m => m.id === saved) ? saved : DEFAULT_CHAT_MODEL;
+        } catch { return DEFAULT_CHAT_MODEL; }
+      });
+      const changeChatModel = (id) => {
+        setChatModel(id);
+        try { localStorage.setItem("librarai_chat_model", id); } catch {}
+      };
 
       // ── Orchestration state ──
       const [plans, setPlans] = useState(() => {
@@ -3856,13 +4017,15 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
 
       // ── API ──
       // overrides.model / overrides.plugins로 사이드바 선택 모델·OpenRouter 플러그인(예: 웹 검색)을 개별 호출 단위로 바꿀 수 있다.
+      // overrides.reasoning으로 호출 단위 추론 예산도 바꿀 수 있다 — 예: 문서 생성처럼 판단이 적은 작업은
+      // { enabled: false }, 반대로 복잡한 위임 판단은 { max_tokens: 2000 }.
       const requestApi = async (apiMessages, temperature, overrides = {}) => {
         let res;
         try {
           res = await fetch(CHAT_API_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: overrides.model || DEFAULT_CHAT_MODEL, max_tokens: overrides.max_tokens || 8000, temperature, messages: apiMessages, ...(overrides.plugins ? { plugins: overrides.plugins } : {}) }),
+            body: JSON.stringify({ model: overrides.model || chatModel, max_tokens: overrides.max_tokens || 8000, temperature, messages: apiMessages, reasoning: overrides.reasoning || { max_tokens: REASONING_MAX_TOKENS }, ...(overrides.plugins ? { plugins: overrides.plugins } : {}) }),
             ...(overrides.signal ? { signal: overrides.signal } : {}),
           });
         } catch (e) {
@@ -4001,10 +4164,15 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
 
       // [백업 경로 — 현재 미사용] B-01을 Gemini 다이렉트 API(api/gemini.js)로 되돌릴 때 callApi에서 다시 연결.
       const requestGeminiApi = async (systemPrompt, msgs) => {
-        const contents = msgs.map(m => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }],
-        }));
+        // Gemini generateContent는 contents가 반드시 user 역할로 시작해야 하고 빈 텍스트 파트를 거부한다.
+        // 위반 시 "Request contains an invalid argument."(INVALID_ARGUMENT, HTTP 400)를 반환한다.
+        // 직접 탭은 첫 메시지가 인사말(role:"assistant")이라 그대로 보내면 model 역할로 시작해 400이 난다
+        // (DM/chief 위임 경로는 user 메시지로 시작해 문제없음). 선두의 비-user 메시지와 빈 내용을 제거한다.
+        const contents = msgs
+          .filter(m => typeof m.content === "string" && m.content.trim())
+          .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+        while (contents.length && contents[0].role !== "user") contents.shift();
+        if (!contents.length) throw new Error("Gemini에 보낼 유효한 대화 내용이 없습니다.");
         let res;
         try {
           res = await fetch(GEMINI_CHAT_API_URL, {
@@ -4020,7 +4188,14 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
         if (!rawText || !rawText.trim()) throw new Error(`HTTP ${res.status}: Gemini에서 빈 응답이 반환되었습니다.`);
         let data;
         try { data = JSON.parse(rawText); } catch { throw new Error(`HTTP ${res.status}: Gemini 응답을 파싱할 수 없습니다.`); }
-        if (data.error) throw new Error(typeof data.error === "string" ? data.error : (data.error.message || JSON.stringify(data.error)));
+        if (data.error) {
+          // Gemini 오류는 message가 뭉뚱그려질 때가 많아(예: "Request contains an invalid argument.")
+          // status와 details의 reason/description을 함께 노출해 원인 파악을 돕는다.
+          const e = data.error;
+          if (typeof e === "string") throw new Error(e);
+          const extras = [e.status, ...(Array.isArray(e.details) ? e.details.map(d => d.reason || d.description || d.fieldViolations?.[0]?.description) : [])].filter(Boolean);
+          throw new Error((e.message || JSON.stringify(e)) + (extras.length ? ` (${extras.join(" / ")})` : ""));
+        }
         if (!res.ok) throw new Error(`Gemini API 요청에 실패했습니다. (HTTP ${res.status})`);
         const parts = data.candidates?.[0]?.content?.parts || [];
         const text = parts.map(p => p.text || "").join("");
@@ -4440,8 +4615,48 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
         }
         return reply;
       };
-      // B-01 최초 실행 시 SEOJI 신간 후보 수집 결과를 사용자 메시지에 붙이는 공용 헬퍼
-      const b01CandidatesBlock = async () => formatB01SeojiBlock(await fetchB01SeojiCandidates());
+      // B-01 하이브리드(2026-07-26): SEOJI로 확정된 실존 후보를 1차 압축한 뒤, Gemini 그라운딩
+      // (native 구글 검색, tools 없이 단독 호출)으로 '대중적 인기·화제성' 신호만 보강한다.
+      // 스모크테스트 결론: 한 호출에 tools+그라운딩을 같이 넣으면 그라운딩이 발동하지 않으므로
+      // 반드시 tools 없는 별도 호출로 분리한다. 또 이 호출은 SEOJI 후보 목록만 넘기고 메인 답변과
+      // 분리된 소형 호출이라, 2026-07-10 롤백 원인(150건 컨텍스트를 통째로 그라운딩 → prompt 4.4만
+      // 토큰·$0.26/턴·타임아웃)을 구조적으로 피한다. 그라운딩은 후보를 지어낼 수 없고(목록 한정),
+      // 실패·지연 시 조용히 생략해 전체 수서를 막지 않는다.
+      const B01_GROUNDING_SHORTLIST = 25;      // 그라운딩에 넘길 최대 후보 수(비용·지연 상한)
+      const B01_GROUNDING_TIMEOUT_MS = 25000;  // 서버리스 30초 천장 이전에 스스로 취소
+      const b01PopularitySignals = async (candidates) => {
+        // 1차 압축: 고가(정가 5만원 이상 = R-08 자동 제외 대상)는 어차피 선정 밖이므로 그라운딩에서도 뺀다.
+        const compressed = candidates
+          .filter(c => { const p = parseInt(c.price, 10); return !(Number.isFinite(p) && p >= 50000); })
+          .slice(0, B01_GROUNDING_SHORTLIST);
+        if (!compressed.length) return "";
+        const listText = compressed.map((c, i) => `${i + 1}. ${c.title}${c.author ? " / " + c.author : ""}`).join("\n");
+        const sys = "너는 공공도서관 수서 사서 보조다. 반드시 아래 제공된 후보 목록 안에서만 고른다 — 목록에 없는 책은 어떤 경우에도 추가하지 않는다. 웹 검색으로 각 후보의 현재 대중적 인기·화제성(베스트셀러 순위, 수상, 화제성, 리뷰량 등)을 확인해 근거와 함께 간결히 정리한다.";
+        const user = `다음은 이번 신간 수서 후보 목록이다. 이 중 현재 대중적으로 인기 있거나 화제성이 높은 도서를 최대 10종 선별해, 각 도서명과 인기 근거를 한 줄로(가능하면 출처 표기) 정리하라. 인기 신호가 뚜렷하지 않으면 적게 골라도 된다. 목록에 없는 책은 절대 추가하지 말 것.\n\n[후보 목록 — ${compressed.length}종]\n${listText}`;
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), B01_GROUNDING_TIMEOUT_MS);
+        try {
+          const text = await requestApi(
+            [{ role: "system", content: sys }, { role: "user", content: user }],
+            0.4,
+            { model: "google/gemini-3.5-flash", plugins: [{ id: "web", engine: "native" }], max_tokens: 1500, signal: ctrl.signal }
+          );
+          const trimmed = (text || "").trim();
+          if (!trimmed) return "";
+          return `\n\n[Gemini 그라운딩 인기·화제성 신호 — 웹 검색(구글) 기반, 위 SEOJI 후보 ${compressed.length}종 한정. 점수화 시 '대중적 인기(사회적관심도)' 가중 신호로만 참고하고, 여기에 없다는 이유로 후보를 제외하지 말 것]\n${trimmed}`;
+        } catch (e) {
+          const reason = (e && e.name === "AbortError") ? "시간 초과" : (e.message || "오류");
+          return `\n\n[Gemini 그라운딩 인기·화제성 신호 — 미확보(${reason}). 인기 가중 없이 SEOJI 후보만으로 진행]`;
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
+      // B-01 최초 실행 시 SEOJI 신간 후보 수집 + Gemini 그라운딩 인기 신호를 사용자 메시지에 붙이는 공용 헬퍼
+      const b01CandidatesBlock = async () => {
+        const candidates = await fetchB01SeojiCandidates();
+        return formatB01SeojiBlock(candidates) + await b01PopularitySignals(candidates);
+      };
 
       const runDmChain = async (tab, initialState) => {
         let state = initialState;
@@ -5144,7 +5359,9 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
             ))}
             {(body || msg.streaming) && (
               <div style={{ fontSize: "14px", lineHeight: "1.75", color: "var(--ink)", minWidth: 0 }}>
-                <MarkdownRenderer text={body} />
+                {!msg.streaming && body.includes("===보고서시작===")
+                  ? <ReportDocument content={body} />
+                  : <MarkdownRenderer text={body} />}
                 {msg.streaming && <span className="stream-cursor">▊</span>}
               </div>
             )}
@@ -5550,6 +5767,17 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
             {mainView === "agent" ? renderAgentQuickActions() : renderDomainTree()}
 
             <div style={{ padding: "12px 14px", borderTop: "1px solid var(--line)" }}>
+              {/* 응답 모델 선택 — 홈·계획·에이전트 채팅 모든 화면에서 공통으로 보이도록 사이드바 하단에 둔다. */}
+              <div style={{ marginBottom: "12px" }}>
+                <label htmlFor="chat-model-select" style={{ display: "block", fontSize: "9.5px", fontWeight: 700, letterSpacing: "1.1px", color: "var(--faint)", textTransform: "uppercase", marginBottom: "5px" }}>응답 모델</label>
+                <select id="chat-model-select" value={chatModel} onChange={e => changeChatModel(e.target.value)}
+                  style={{ width: "100%", padding: "7px 8px", background: "var(--bg)", border: "1px solid #ECECE6", borderRadius: "var(--radius-btn)", color: "var(--body-text)", fontSize: "11.5px", fontFamily: "inherit", cursor: "pointer" }}>
+                  {CHAT_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+                <div style={{ fontSize: "10px", color: "var(--faint)", padding: "4px 2px 0" }}>
+                  {(CHAT_MODELS.find(m => m.id === chatModel) || {}).note}
+                </div>
+              </div>
               {mainView === "agent" ? (
                 <button onClick={() => resetCurrent()}
                   style={{ width: "100%", padding: "8px", background: "var(--bg)", border: "1px solid #ECECE6", borderRadius: "var(--radius-btn)", color: "var(--muted)", cursor: "pointer", fontSize: "12px", fontFamily: "inherit" }}
@@ -5738,9 +5966,11 @@ self_tasks의 기획담당 고유 업무는 해당 섹션에서 직접 작성합
                           <div style={{ flex: 1, fontSize: "14px", lineHeight: "1.75", color: "var(--ink)", minWidth: 0 }}>
                             {msg.streaming
                               ? <><MarkdownRenderer text={msg.content} /><span className="stream-cursor">▊</span></>
-                              : (msg.content.includes("===기안문시작===") || msg.content.includes("===첨부시작===") || msg.content.includes("===엑셀시작==="))
-                                ? <TabbedDocument content={msg.content} />
-                                : <MarkdownRenderer text={msg.content} />}
+                              : msg.content.includes("===보고서시작===")
+                                ? <ReportDocument content={msg.content} />
+                                : (msg.content.includes("===기안문시작===") || msg.content.includes("===첨부시작===") || msg.content.includes("===엑셀시작==="))
+                                  ? <TabbedDocument content={msg.content} />
+                                  : <MarkdownRenderer text={msg.content} />}
                           </div>
                         </div>
                       )

@@ -18,11 +18,16 @@ module.exports = async function handler(req, res) {
   // 2026-07-10: FN-01 신간 후보 수집을 네이버 책 검색 API(결정론적 호출)로 대체하면서
   // google_search 그라운딩은 기본 비활성화. 요청 body에 grounding:true를 명시할 때만 켠다
   // (턴당 검색 반복 호출로 토큰·비용 폭증, 30초 타임아웃 근접 문제가 있었음 — 되돌릴 필요 없이 옵션화).
-  // thinking(내부 추론) 기본 비활성화 — 55건 점수화 같은 무거운 요청에서 thinking 토큰이 응답 시간을
-  // 60초 이상으로 늘려 타임아웃을 유발함(2026-07-10 실측). 필요 시 body에 thinkingBudget 지정 가능.
+  // thinking(내부 추론): 예전엔 무거운 점수화의 타임아웃을 막으려 0(비활성화)을 기본값으로 썼으나,
+  // 2026-07-26 현재 gemini-flash-latest 별칭이 gemini-3.6-flash로 이동했고 이 모델은 thinkingBudget:0을
+  // 거부한다("Request contains an invalid argument." / INVALID_ARGUMENT — 실측 확인). Gemini 3.x는
+  // thinking이 필수라 0으로 끌 수 없으므로, 0/미지정은 -1(동적: 모델이 예산 자동 결정)로 보정한다.
+  // 지연이 문제면 body의 thinkingBudget에 양의 상한값(예: 512)을 지정해 묶을 수 있다.
   // temperature 기본 0 — B-01이 첨부된 실제 네이버/SEOJI 수집 데이터를 벗어나 존재하지 않는 도서를
   // 지어내는 사례가 있어(2026-07-16 확인) 그라운딩 정확도를 우선한다. 필요 시 body의 temperature로 override.
   const temp = temperature != null ? temperature : 0;
+  const rawBudget = thinkingBudget != null ? thinkingBudget : -1;
+  const budget = rawBudget === 0 ? -1 : rawBudget; // 0(비활성화)은 현재 모델에서 무효 → 동적으로 보정
 
   try {
     const upstream = await fetch(
@@ -34,7 +39,7 @@ module.exports = async function handler(req, res) {
           contents,
           ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
           ...(grounding ? { tools: [{ google_search: {} }] } : {}),
-          generationConfig: { temperature: temp, thinkingConfig: { thinkingBudget: thinkingBudget != null ? thinkingBudget : 0 } },
+          generationConfig: { temperature: temp, thinkingConfig: { thinkingBudget: budget } },
         }),
       }
     );
