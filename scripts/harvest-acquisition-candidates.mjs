@@ -340,9 +340,29 @@ export function parseAiDiscovery(text, source, limit = source.cap) {
   const content = String(text || "").replace(/```(?:json)?|```/gi, "").trim();
   const start = content.indexOf("[");
   const end = content.lastIndexOf("]");
-  if (start < 0 || end <= start) throw new Error("AI 보완 결과에서 JSON 배열을 찾지 못했습니다.");
-  const parsed = JSON.parse(content.slice(start, end + 1));
-  if (!Array.isArray(parsed)) throw new Error("AI 보완 결과가 배열이 아닙니다.");
+  let parsed = [];
+  if (start >= 0 && end > start) {
+    try {
+      parsed = JSON.parse(content.slice(start, end + 1));
+    } catch {
+      // 웹 검색 모델이 인용 표기를 섞은 경우 아래 파이프 형식으로 한 번 더 읽는다.
+    }
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    parsed = content
+      .split(/\r?\n/)
+      .map((line) => line.replace(/^[\s\-*\d.)]+/, "").trim())
+      .filter((line) => line.includes("|"))
+      .map((line) => {
+        const [title, author, publisher, isbn, pubdate, genre, source_url, ...reason] =
+          line.split("|").map(cleanText);
+        return { title, author, publisher, isbn, pubdate, genre, source_url, reason: reason.join(" | ") };
+      })
+      .filter((item) => item.title && !/^(제목|title)$/i.test(item.title));
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error(`AI 보완 결과를 해석하지 못했습니다: ${content.slice(0, 220)}`);
+  }
   return parsed
     .map((item) => {
       let sourceUrl = "";
@@ -385,8 +405,10 @@ async function discoverSourceWithAi(source, limit) {
     `검색 허용 도메인: ${source.domain}`,
     `목표: 최신 신간·추천·인기대출 도서 중 서로 다른 책 최대 ${limit}종`,
     "언론사는 기사 제목이 아니라 기사에서 실제로 소개한 책을 추출한다.",
-    "각 항목 형식:",
+    "우선 JSON 배열로 출력한다. 웹 인용 때문에 JSON 출력이 불가능하면 아래 8개 필드를 파이프(|)로 구분해 책마다 한 줄로 출력한다.",
+    "각 항목 JSON 형식:",
     '{"title":"","author":"","publisher":"","isbn":"","pubdate":"YYYY-MM-DD","genre":"","source_url":"","reason":""}',
+    "파이프 형식: 제목 | 저자 | 출판사 | ISBN13 | 출간일 | 분야 | 지정 출처의 실제 URL | 수록 근거",
   ].join("\n");
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {

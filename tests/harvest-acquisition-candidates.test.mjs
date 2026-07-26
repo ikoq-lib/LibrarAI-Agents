@@ -83,6 +83,18 @@ test("AI 보완 결과는 지정 출처 도메인의 근거 URL이 있어야 한
   assert.deepEqual(books.map((book) => book.title), ["허용 책"]);
 });
 
+test("웹 검색 응답의 파이프 형식도 보완 후보로 읽는다", () => {
+  const source = SOURCES.find((item) => item.id === "hani");
+  const [book] = parseAiDiscovery(
+    "1. 파이프 책 | 박저자 | 책출판 | 9781234567890 | 2026-07-01 | 인문 | " +
+      "https://www.hani.co.kr/arti/culture/book/1 | 책과 생각 소개",
+    source,
+  );
+  assert.equal(book.title, "파이프 책");
+  assert.equal(book.isbn, "9781234567890");
+  assert.equal(book.collection_method, "ai_web_fallback");
+});
+
 test("ISBN 중복 후보는 출처와 URL을 합친다", () => {
   const merged = mergeCandidates([
     {
