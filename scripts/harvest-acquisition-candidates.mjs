@@ -330,14 +330,21 @@ async function main() {
   await upsertCandidates(finalCandidates);
 
   const verified = finalCandidates.filter((candidate) => candidate.verified).length;
-  console.log(JSON.stringify({
+  const summary = {
     harvested_at: new Date().toISOString(),
     discovered: discovered.length,
     deduplicated: merged.length,
     stored: finalCandidates.length,
     seoji_verified: verified,
     unverified: finalCandidates.length - verified,
-  }, null, 2));
+  };
+  console.log(JSON.stringify(summary, null, 2));
+  if (finalCandidates.length === 0) {
+    throw new Error(
+      "추천도서 후보가 0건입니다. 모든 발굴 요청의 오류 로그를 확인하세요. " +
+      "OpenRouter HTTP 402이면 크레딧 충전 후 다시 실행해야 합니다.",
+    );
+  }
 }
 
 main().catch((error) => {
