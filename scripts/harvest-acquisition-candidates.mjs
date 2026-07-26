@@ -16,7 +16,7 @@ const { Pool } = pg;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const SEOJI_URL = "https://www.nl.go.kr/seoji/SearchApi.do";
 const MODEL = process.env.B01_HARVEST_MODEL || "google/gemini-3.5-flash";
-const GENRE_CAP = Number(process.env.B01_HARVEST_GENRE_CAP || 15);
+const GENRE_CAP = Number(process.env.B01_HARVEST_GENRE_CAP || 12);
 const GENRES = [
   "소설·문학·시",
   "에세이·인문·역사",
@@ -104,7 +104,9 @@ async function discoverGenre(genre) {
     body: JSON.stringify({
       model: MODEL,
       temperature: 0.3,
-      max_tokens: 3500,
+      // OpenRouter는 잔여 크레딧을 max_tokens 기준으로 선승인한다. 실제 12종 한 줄 목록은
+      // 1,800토큰이면 충분하며, 상한을 크게 잡으면 내용 생성 전 HTTP 402가 날 수 있다.
+      max_tokens: 1800,
       stream: false,
       plugins: [{ id: "web", engine: "native" }],
       messages: [
@@ -210,6 +212,42 @@ async function upsertCandidates(candidates) {
   const client = await pool.connect();
   try {
     await client.query("begin");
+    // 배포 환경에 마이그레이션이 아직 적용되지 않았어도 첫 실행이 스스로 복구되도록 한다.
+    // 모두 IF NOT EXISTS/멱등 구문이라 이후 주간 실행에서는 기존 테이블을 그대로 사용한다.
+    await client.query(`
+      create table if not exists public.acquisition_candidates (
+        id bigint generated always as identity primary key,
+        dedup_key text not null unique,
+        isbn text,
+        title text not null,
+        author text,
+        publisher text,
+        pubdate text,
+        price integer,
+        form_detail text,
+        genre text,
+        sources text[] not null default '{}',
+        recommend_count integer not null default 1,
+        popnote text,
+        verified boolean not null default false,
+        status text not null default 'candidate',
+        first_seen timestamptz not null default now(),
+        last_seen timestamptz not null default now(),
+        metadata jsonb not null default '{}'::jsonb
+      );
+      create index if not exists acq_cand_status_idx
+        on public.acquisition_candidates (status);
+      create index if not exists acq_cand_pubdate_idx
+        on public.acquisition_candidates (pubdate);
+      create index if not exists acq_cand_verified_idx
+        on public.acquisition_candidates (verified);
+      create unique index if not exists acq_cand_isbn_uidx
+        on public.acquisition_candidates (isbn) where isbn is not null;
+      alter table public.acquisition_candidates enable row level security;
+      drop policy if exists "acq_cand public read" on public.acquisition_candidates;
+      create policy "acq_cand public read"
+        on public.acquisition_candidates for select using (true);
+    `);
     for (const candidate of candidates) {
       await client.query(
         `insert into public.acquisition_candidates
