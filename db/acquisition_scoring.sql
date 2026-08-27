@@ -408,23 +408,33 @@ create table if not exists public.scoring_weights (
   note          text
 );
 
--- 배분 근거
---   발행일 20  : 측정된 최강 단일 예측변수(2014년 발행 회전율 0.53 vs 2024년 4.39 = 8.3배)
---   출판사 20 / 저자 20 : 소장규모와 회전율을 축 하나로 결합해 이중계산을 막는다
+-- 배분 근거 (괄호 안은 2026-08-27 이전 값)
+--   발행일 24(20)  : 측정된 최강 단일 예측변수(2014년 발행 회전율 0.53 vs 2024년 4.39 = 8.3배)
+--   출판사 24(20) / 저자 24(20) : 소장규모와 회전율을 축 하나로 결합해 이중계산을 막는다
 --                        (많이 산 출판사가 많이 대출되는 것은 같은 신호다)
---   외부인기 15 : 주간 harvest(교보/YES24/KPIPA)의 recommend_count. 원안에 없던 축.
---                 이 축이 없으면 "우리 도서관의 과거 이력"만 보게 된다
---   KDC결핍 15  : B-05 결핍지수. 대형 출판사 쏠림(마태효과)을 상쇄하는 유일한 축
---   가격 10     : 원안 유지. 변별력은 낮으나(71.9%가 한 구간) 이상치 제거 장치
-insert into public.scoring_weights (axis, max_points, neutral_ratio, note) values
-  ('publisher',   20, 0.50, '조정회전율 백분위. 무신호는 중앙값 처리'),
-  ('author',      20, 0.50, '조정회전율 백분위. 무신호는 중앙값 처리'),
-  ('pubdate',     20, 0.20, 'pubdate_score_bands 참조'),
-  ('popularity',  15, 0.00, 'acquisition_candidates.recommend_count 연동. 미등장은 0(가점 방식)'),
-  ('kdc_balance', 15, 0.50, 'B-05 결핍지수 연동. kdc_target_ratios 미등록 시 폴백이 역효과 - mv_kdc_deficit 주석 참조'),
-  ('price',       10, 0.50, 'price_score_bands 참조')
+--   외부인기 0(15) : 주간 harvest(교보/YES24/KPIPA)의 recommend_count. 아래 사유로 비활성화.
+--   KDC결핍 17(15) : B-05 결핍지수. 대형 출판사 쏠림(마태효과)을 상쇄하는 유일한 축
+--   가격 11(10)    : 원안 유지. 변별력은 낮으나(71.9%가 한 구간) 이상치 제거 장치
+--
+-- ※ pubdate/price 는 구간표(pubdate_score_bands, price_score_bands)에 절대 점수를
+--   담고 있다. 여기 max_points 를 바꾸면 그 표도 같은 배율로 환산해야 한다.
+--   publisher/author/kdc_balance 는 비율 x max_points 라 자동으로 따라간다.
+-- 2026-08-27 변경: popularity 축 비활성화, 만점 15 를 나머지 5축에 재배분.
+--   사유 - 선정 583종 중 579종(99.3%)의 recommend_count 가 0 이었다. 주간 harvest 의
+--          acquisition_candidates 와 SEOJI 일일 수집분의 교집합이 4종뿐이라 축이 놀았다.
+--   배분 - 비례 배분값(x100/85)은 23.53/23.53/23.53/17.65/11.76 이다.
+--          읽기 쉽게 정수로 맞추되 축 간 순서와 비율은 그대로 둔다.
+insert into public.scoring_weights (axis, max_points, neutral_ratio, enabled, note) values
+  ('publisher',   24, 0.50, true,  '조정회전율 백분위. 무신호는 중앙값 처리 (20 -> 24)'),
+  ('author',      24, 0.50, true,  '조정회전율 백분위. 무신호는 중앙값 처리 (20 -> 24)'),
+  ('pubdate',     24, 0.20, true,  'pubdate_score_bands 참조 (20 -> 24)'),
+  ('popularity',   0, 0.00, false, '2026-08-27 비활성화. 후보의 99.3%가 recommend_count 0 이라 변별력이 없었다. '
+                                   '주간 harvest 후보 풀과 SEOJI 수집분을 연결하면 되살릴 것'),
+  ('kdc_balance', 17, 0.50, true,  'B-05 결핍지수 연동. 목표비율은 ATT-006 산식으로 등록됨 (15 -> 17)'),
+  ('price',       11, 0.50, true,  'price_score_bands 참조 (10 -> 11)')
 on conflict (axis) do update
-  set max_points = excluded.max_points, neutral_ratio = excluded.neutral_ratio, note = excluded.note;
+  set max_points = excluded.max_points, neutral_ratio = excluded.neutral_ratio,
+      enabled = excluded.enabled, note = excluded.note;
 
 
 -- 발행일 점수 구간
@@ -439,13 +449,15 @@ create table if not exists public.pubdate_score_bands (
   label    text not null
 );
 
+-- 이 표의 points 는 절대 점수다(만점 비율이 아니다). 따라서 scoring_weights.max_points 를
+-- 바꾸면 여기도 같은 배율로 환산해야 한다. 2026-08-27 만점 20 -> 24 에 맞춰 x1.2 했다.
 insert into public.pubdate_score_bands (id, diff_min, diff_max, points, label) values
-  (1, -120,   -2, 10, '출간 예정(2개월 이상 후) - 아직 구매 불가, 예약 검토 대상'),
-  (2,   -1,    2, 20, '최근 3개월 + 1개월 후'),
-  (3,    3,    5, 16, '그 이전 3개월'),
-  (4,    6,    8, 12, '그 이전 3개월'),
-  (5,    9,   11,  8, '그 이전 3개월'),
-  (6,   12, 9999,  4, '1년 초과')
+  (1, -120,   -2, 12.0, '출간 예정(2개월 이상 후) - 아직 구매 불가, 예약 검토 대상'),
+  (2,   -1,    2, 24.0, '최근 3개월 + 1개월 후'),
+  (3,    3,    5, 19.2, '그 이전 3개월'),
+  (4,    6,    8, 14.4, '그 이전 3개월'),
+  (5,    9,   11,  9.6, '그 이전 3개월'),
+  (6,   12, 9999,  4.8, '1년 초과')
 on conflict (id) do update
   set diff_min = excluded.diff_min, diff_max = excluded.diff_max,
       points = excluded.points, label = excluded.label;
@@ -460,10 +472,11 @@ create table if not exists public.price_score_bands (
   label     text not null
 );
 
+-- pubdate_score_bands 와 같은 이유로 절대 점수다. 만점 10 -> 11 에 맞춰 x1.1 했다.
 insert into public.price_score_bands (id, min_price, max_price, points, label) values
-  (1,     0,    9999,  5, '1만원 미만 (후보의 22.0%)'),
-  (2, 10000,   39999, 10, '1만~4만원 (후보의 71.9%)'),
-  (3, 40000, 9999999,  5, '4만원 이상 (후보의 6.1%)')
+  (1,     0,    9999,  5.5, '1만원 미만 (후보의 22.0%)'),
+  (2, 10000,   39999, 11.0, '1만~4만원 (후보의 71.9%)'),
+  (3, 40000, 9999999,  5.5, '4만원 이상 (후보의 6.1%)')
 on conflict (id) do update
   set min_price = excluded.min_price, max_price = excluded.max_price,
       points = excluded.points, label = excluded.label;
@@ -640,7 +653,12 @@ comment on materialized view public.mv_kdc_deficit is
 
 create or replace view public.v_candidate_scores as
 with w as (
-  select axis, max_points, neutral_ratio from public.scoring_weights where enabled
+  -- 비활성 축을 행째로 빼면 아래 (select max_points from w where axis=...) 가 NULL 이 되고
+  -- score_total 전체가 NULL 로 전파된다. 그래서 빼지 않고 만점을 0 으로 만든다.
+  select axis,
+         case when enabled then max_points else 0 end as max_points,
+         neutral_ratio
+  from public.scoring_weights
 ),
 base as (
   select
@@ -723,9 +741,12 @@ select
   round(s.score_publisher + s.score_author + s.score_pubdate
       + s.score_price + s.score_popularity + s.score_kdc, 2) as score_total,
   -- 신호 없는 축의 개수. 클수록 총점의 근거가 얕다는 표시.
-  ( (case when s.pub_holdings   is null then 1 else 0 end)
-  + (case when s.aut_holdings   is null then 1 else 0 end)
-  + (case when s.recommend_count is null then 1 else 0 end) ) as unknown_axes
+  -- 꺼진 축은 세지 않는다(점수에 기여하지 않으므로 근거가 얕은 것도 아니다).
+  ( (case when s.pub_holdings is null then 1 else 0 end)
+  + (case when s.aut_holdings is null then 1 else 0 end)
+  + (case when s.recommend_count is null
+            and (select enabled from public.scoring_weights where axis = 'popularity')
+          then 1 else 0 end) ) as unknown_axes
 from scored s;
 
 comment on view public.v_candidate_scores is
