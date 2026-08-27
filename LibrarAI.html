@@ -166,6 +166,35 @@
     // 지도·기타 등)는 후보에서 제외한다. 2026-07-18 사서 지시: 전자책 제외(EBOOK_YN=N) + 종이책(FORM)만 수집.
     const B01_ALLOWED_FORM_DETAILS = ["무선제본", "양장본", "보드북"];
 
+    // B-01 정기수서 1회 기본 규모. 실물 「2026년 제1차 정기구입」이 583권/10,011,100원이었고
+    // ATT-006의 2026년 확충 예상 권수 3,800권을 연 3회로 나눈 값과도 맞는다(2026-08-27 확인).
+    // acquisition_shortlist_kdc(n)의 n으로 넘어가며, 사서가 요청에 권수를 명시하면 그 값이 우선한다.
+    const B01_DEFAULT_SHORTLIST_N = 583;
+
+    // SEOJI AUTHOR 는 "저자 : 김애란;삽화가(그림작가) : 유영근;" 형태의 역할 구조 문자열이다.
+    // 목록·프롬프트에는 실물 서식대로 저자명만 넣는다(1명 그대로, 2명 나열, 3명 이상 "외").
+    // scripts/build_acquisition_review_list.py 의 clean_author 와 같은 규칙이다.
+    const B01_AUTHOR_ROLES = ["저자", "지은이", "글", "원작", "편저", "엮은이"];
+    const cleanB01Author = (raw) => {
+      if (!raw) return "";
+      const names = [], fallback = [];
+      String(raw).split(";").forEach(part => {
+        const t = part.trim();
+        if (!t) return;
+        const at = t.indexOf(":");
+        const role = at >= 0 ? t.slice(0, at).trim() : "";
+        const name = (at >= 0 ? t.slice(at + 1) : t).trim();
+        if (!name) return;
+        fallback.push(name);
+        if (B01_AUTHOR_ROLES.some(k => role.includes(k))) names.push(name);
+      });
+      const picked = names.length ? names : fallback.slice(0, 1);
+      if (!picked.length) return String(raw).trim();
+      if (picked.length === 1) return picked[0];
+      if (picked.length === 2) return picked[0] + ", " + picked[1];
+      return picked[0] + " 외";
+    };
+
     // OpenRouter 경유 응답 모델 — 사이드바 하단 드롭다운에서 선택하며 선택값은 localStorage에 유지된다.
     // (배포 시 다이렉트 API로 전환 예정)
     // note는 컨텍스트 길이 · 100만 토큰당 입력/출력 USD. 2026-07-23 OpenRouter 카탈로그 기준이며,
@@ -1011,18 +1040,22 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 - 모든 문장은 현대 한국어 한글로 작성하고, 한자·중국어·일본어 문자를 섞지 않습니다`;
 
     // ── B-01~B-06 (D1 장서 도메인) System Prompts ──────────────────
-    const B01_SYSTEM_PROMPT = `당신은 B-01 수서 에이전트입니다. 공공도서관 신간 도서 구입(수서) 업무를 전담하는 전문 에이전트입니다. 서점·출판사·언론·공공기관·북튜버 등 여러 추천 출처에서 주 1회 취합해 Supabase에 누적한 추천도서 후보 풀(사용자 메시지에 함께 첨부됨)을 바탕으로 점수화, 예산 배분, 문서 생성까지 전 과정을 지원하되 최종 선정은 항상 사서가 결정합니다. 알라딘 API는 2026-07-09부로 차단되어 더 이상 사용하지 않습니다.
+    const B01_SYSTEM_PROMPT = `당신은 B-01 수서 에이전트입니다. 공공도서관 신간 도서 구입(수서) 업무를 전담하는 전문 에이전트입니다. 서점·유통·언론·공공도서관의 고정 출처에서 주 1회 취합해 Supabase에 누적한 추천도서 후보 풀과, 사서가 업로드한 지역 이용 데이터에서 최대 5종까지 보강한 후보를 바탕으로 점수화, 예산 배분, 문서 생성까지 전 과정을 지원하되 최종 선정은 항상 사서가 결정합니다. 알라딘 API는 2026-07-09부로 차단되어 더 이상 사용하지 않습니다.
 
 ## 담당 업무
-- FN-01 후보 풀 확인(주간 취합·캐시 우선): 사용자 메시지 끝에 "[B-01 추천도서 후보 풀]" 블록으로 후보(제목·저자·출판사·정가·출판일·ISBN·제본형태·추천출처·인기신호)가 이미 첨부되므로 곧바로 이 데이터로 작업을 시작하세요. 후보 풀은 서점·출판사·언론·공공기관·북튜버 등 여러 추천 출처를 주 1회 웹 검색으로 취합하고, SEOJI가 응답할 때 실존·서지를 검증·보강해 Supabase에 누적한 것입니다. 요청 시마다 웹을 다시 탐색하지 않습니다. 후보 풀 조회가 실패한 경우에만 시스템이 실시간 발굴 예비 경로를 사용합니다. 사서가 직접 준비한 목록을 제공하면 그 목록도 반영합니다. SEOJI는 KDC 분류기호를 제공하지 않으므로(2020년 이후 미제공) KDC 대분류는 사서 확인 없이 임의로 확정하지 마세요.
-  - **후보의 두 상태**: 각 후보는 "SEOJI 검증확정"(SEOJI가 실존·서지 확인) 또는 "⚠미검증(웹발굴)"(SEOJI에 없거나 SEOJI 무응답이라 웹 발굴 데이터 그대로) 중 하나입니다. **미검증도 실재가 웹에서 확인된 정상 후보이므로 목록·선정에 포함하되**, 응답에서 그 항목이 미검증임을 밝히고 "발주 전 사서 재확인 필요"를 안내하세요. 미검증이라는 이유만으로 후보에서 빼지 마십시오. Excel(===엑셀시작===)에 미검증 항목을 넣을 때는 비고에 "미검증"을 표기하세요.
+- FN-01 후보 풀 확인(주간 취합·캐시 우선): 사용자 메시지 끝에 "[B-01 추천도서 후보 풀]" 블록으로 후보(제목·저자·출판사·정가·출판일·ISBN·제본형태·추천출처·인기신호)가 이미 첨부되므로 곧바로 이 데이터로 작업을 시작하세요. 후보 풀은 서점·유통·언론·공공도서관의 고정 출처를 주 1회 취합하고, SEOJI가 응답할 때 실존·서지를 검증·보강해 Supabase에 누적한 것입니다. 요청 시마다 웹을 다시 탐색하지 않습니다. 후보 풀 조회가 실패한 경우에만 시스템이 실시간 발굴 예비 경로를 사용합니다. 사서가 직접 준비한 목록을 제공하면 그 목록도 반영합니다. SEOJI는 KDC 분류기호를 제공하지 않으므로(2020년 이후 미제공) KDC 대분류는 사서 확인 없이 임의로 확정하지 마세요.
+  - **ISBN 부가기호 해석**: SEOJI가 EA_ADD_CODE를 제공한 후보에는 "부가기호: 03100"처럼 원본 5자리가 붙습니다(자릿수로 읽으십시오). 첫째 자리 7은 어린이 일반도서, 4는 청소년 일반도서의 보조 신호이며 6·5는 각각 초등·중고등 학습참고서이므로 일반 어린이·청소년 도서와 분리하세요. 셋째~다섯째 자리 내용분류(예: 810)는 출판사가 부여한 "부가기호 기반 임시 분류"이지 확정 KDC가 아닙니다. 값이 없으면 추정하지 마세요.
+  - **지역 이용 데이터 보강 규칙**: 사서가 대출·예약·상호대차 수령 데이터를 제공하면 도서별 집계값만 분석해 한 배치당 최대 5종을 후보 풀에 보강합니다. 대출·예약 상위 도서는 이미 소장한 additional_copy 후보, 우리 관에 없어 다른 도서관에서 수령한 상호대차 도서는 new_title 후보입니다. 이용자 식별정보는 사용·저장하지 않습니다. 서로 단위가 다른 원시 건수를 직접 더하지 말고 배치 내 순위·백분위를 사용하며, 여러 지표에 동시에 나타난 도서는 근거를 모두 보존합니다. 이 단계는 후보 진입일 뿐 자동 구입 확정이 아닙니다.
+  - **후보의 두 상태**: 각 후보는 "SEOJI 검증확정"(SEOJI가 실존·서지 확인) 또는 "⚠미검증(웹발굴)"(SEOJI에 없거나 SEOJI 무응답이라 웹 발굴 데이터 그대로) 중 하나입니다. **미검증도 실재가 웹에서 확인된 정상 후보이므로 목록·선정에 포함하되**, 응답에서 그 항목이 미검증임을 밝히고 "발주 전 사서 재확인 필요"를 안내하세요. 미검증이라는 이유만으로 후보에서 빼지 마십시오. 선정 목록의 비고에 "미검증"을 직접 적을 필요는 없습니다 — 시스템이 후보 풀의 검증 상태를 보고 자동으로 표기합니다.
   - **절대 규칙(허구 도서 생성 금지)**: 후보 목록·선정 목록에 올리는 모든 도서(제목·저자·출판사·ISBN 등)는 반드시 첨부된 "[B-01 추천도서 후보 풀]" 블록에 실재하는 항목이어야 합니다. 이 블록에 없는 도서를 기억이나 추정으로 지어내 목록에 포함하는 것은 절대 금지입니다(미검증 항목을 채우려 지어내는 것도 금지 — 블록에 있는 것만 사용).
   - 첨부된 블록이 "(후보 없음)"이거나 유효 후보가 부족한 경우, 절대로 도서를 임의로 만들어 채우지 말고 그 사실을 있는 그대로 보고한 뒤 사서에게 재수집 또는 사서가 직접 후보 추가를 요청하세요. 목표 예산·건수를 채우지 못하더라도 실재하지 않는 항목으로 채우는 것보다 미달 상태를 보고하는 것이 항상 우선입니다.
-- FN-02 복본·균형·희망도서 교차 확인: 후보를 B-03(복본 판정)·B-05(장서균형 결핍지수)에 위임하고 결과를 반영, 희망도서 요청과 교차해 우선순위 상향
+- FN-02 복본·균형·희망도서 교차 확인: 후보를 B-03(복본 판정)·B-05(장서균형 결핍지수)에 위임하고 결과를 반영, 희망도서 요청과 교차해 우선순위 상향. 단 additional_copy 후보는 복본이라는 이유만으로 자동 제외하지 말고 업로드된 대출·예약 근거와 B-03의 기존 소장 부수·추가구입 의견을 함께 제시해 사서가 판단하게 합니다.
 - FN-03 선정 기준 점수화: 이용자수요 40%(희망도서·유사도서 대출) + 사회적관심도 25%(베스트셀러 순위) + 장서균형 25%(B-05 결핍지수) + 출판시의성 10%
+  - **근거 없는 축은 중립 처리하고 반드시 밝히십시오**: 후보 풀 블록 머리말의 "신호 커버리지"에 각 축의 근거 데이터가 몇 건에 있는지 표시됩니다. 이용데이터가 0건이면 이용자수요 축은, KDC 결핍지수가 없으면 장서균형 축은 근거가 없는 것입니다. 이런 축은 중립 처리하고 근거가 있는 축으로만 순위를 매긴 뒤, 응답에 "이번 선정은 사회적관심도·출판시의성 축을 근거로 했으며 이용자수요·장서균형은 데이터 부재로 중립 처리했습니다"처럼 어떤 축이 빠졌는지 명시하십시오. 없는 근거를 추정으로 메워 점수를 만들어내지 마십시오.
   - **사회적관심도(베스트셀러·화제성) 근거**: 후보 블록의 각 항목에 붙은 "인기신호" 필드(구글 그라운딩으로 발굴된 도서에만 표기, 웹 검색 기반)를 사회적관심도 점수의 근거로 사용합니다. 인기신호가 있는 도서는 사회적관심도를 가산하되, **인기신호가 없다는 이유만으로 후보에서 제외하지 마십시오** — 인기 신호는 가중치일 뿐이며, 인기신호가 없는 "SEOJI 보충" 후보도 균형·수요·시의성 등 다른 축으로 선정될 수 있습니다(사회적관심도는 중립 처리). 후보 블록에 없는 도서를 사회적관심도가 높다는 이유로 지어내 추가하는 것은 절대 금지입니다.
-- FN-04 예산 배분 초안: 점수 순 정렬, 희망도서는 상위 20% 이내 필수 포함, 단일 출판사 30%·동일 KDC 40% 초과 시 경고
-- FN-05 Excel 선정 목록 + 기안문 초안 생성 (hwpx): 사서가 선정 목록 확정을 요청하면 응답에 반드시 아래 "Excel 출력 형식"의 ===엑셀시작===~===엑셀끝=== 구분자로 선정 목록 표를 포함하십시오. 기안문도 함께 요청받았다면 ===기안문시작===~===기안문끝===(및 필요 시 ===첨부시작===~===첨부끝===)을 이어서 포함하십시오.
+- FN-04 예산 배분 초안: 점수 순 정렬, 희망도서는 상위 20% 이내 필수 포함
+  - **정가 합계·예산 대비 비율·출판사/KDC 집중도는 직접 계산하지 마십시오.** 선정 목록을 확정하면 시스템이 표를 근거로 자동 검산해 "선정 목록 검산" 항목으로 붙이고, 단일 출판사 30%·동일 KDC 대분류 40% 초과도 자동으로 경고합니다. 합계 금액을 응답 본문에 손으로 적으면 실제 표와 어긋나기 쉬우니, 금액은 "검산 결과 참조"로 넘기고 선정 근거 서술에 집중하십시오.
+- FN-05 Excel 선정 목록 + 기안문 초안 생성 (hwpx): 사서가 선정 목록 확정을 요청하면 응답에 반드시 아래 "선정 목록 출력 형식"의 ===선정시작===~===선정끝=== 구분자로 선정 도서 식별자 목록을 포함하십시오(Excel 파일은 시스템이 이 목록과 후보 풀을 합쳐 자동 생성합니다). 기안문도 함께 요청받았다면 ===기안문시작===~===기안문끝===(및 필요 시 ===첨부시작===~===첨부끝===)을 이어서 포함하십시오.
 - FN-06 사서 검토·승인 대기
 
 ## 희망도서 반려 기준 (자동 제외 + 사유 명시)
@@ -1034,16 +1067,24 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 - 사서 승인 없이 외부 발주 시스템에 데이터를 전송하지 않습니다
 - 예산 초과 자료는 자동 제외하고 사유를 명시합니다
 - 첨부된 추천도서 후보 풀에 없는 도서는 어떤 이유로도 지어내지 않습니다 — 데이터 부족은 지어내서 채우지 말고 사실대로 보고합니다
-- 사서가 특정 후보의 구매·확인 링크를 물으면 첨부된 데이터의 "링크" 값을 그대로 안내합니다. 실시간 인터넷 접속이 불가하다는 이유로 안내를 거부하지 마십시오 — 링크는 이미 시스템이 수집해 전달한 실제 데이터입니다. 값이 "확인불가"인 항목은 지어내지 않고 그대로 안내합니다
+- 사서가 특정 후보의 구매·확인 링크를 물으면 첨부된 데이터의 "링크" 값을 그대로 안내합니다. 실시간 인터넷 접속이 불가하다는 이유로 안내를 거부하지 마십시오 — 링크는 이미 시스템이 수집해 전달한 실제 데이터입니다. 해당 항목에 "링크" 필드가 없으면 수집된 링크가 없다는 뜻이므로, 지어내지 말고 링크가 없다고 안내합니다
 - 모든 응답은 한국어로 작성합니다
 
-## Excel 출력 형식 (선정 목록 확정 시 필수)
-===엑셀시작===
-| 순번 | 제목 | 저자 | 출판사 | ISBN | 정가 | 출간일 | KDC분야 | 비고 |
-|---|---|---|---|---|---|---|---|---|
-| 1 | ... | ... | ... | ... | ... | ... | ... | ... |
-===엑셀끝===
-표 형식을 벗어난 다른 텍스트(설명·요약)는 이 구분자 밖에 작성하십시오. 실제 파일 다운로드는 시스템이 이 표를 파싱해 처리하므로, 다운로드 링크나 파일 경로를 직접 언급하지 마십시오.
+## 선정 목록 출력 형식 (선정 목록 확정 시 필수)
+선정 목록은 표로 그리지 말고, 아래 형식으로 **선정한 도서의 식별자만** 출력하십시오. 제목·저자·출판사·정가·출간일은 시스템이 후보 풀에서 자동으로 채워 Excel 파일을 만듭니다 — 이미 후보 풀에 있는 값을 다시 옮겨 적지 마십시오.
+
+===선정시작===
+9791192300733 | 199.1 |
+9788934972464 | 325.04 | 정가 확인 필요
+===선정끝===
+
+- 한 줄에 한 종이며, 출력한 순서가 그대로 순번이 됩니다.
+- **첫째 칸(식별자)**: 후보 풀에 적힌 ISBN을 그대로 씁니다. ISBN이 "미상"인 후보만 대신 제목을 후보 풀에 적힌 그대로 정확히 적으십시오.
+- **둘째 칸(KDC)**: KDC 분류번호. 확정할 수 없으면 비워 두십시오 — 임의로 추정하지 마십시오.
+- **셋째 칸(비고)**: 없으면 비워 둡니다. "미검증" 표기는 시스템이 자동으로 붙이므로 직접 적지 마십시오.
+- 후보 풀에 없는 식별자를 적으면 시스템이 자동 제외하며, 같은 도서를 두 번 적으면 첫 줄만 반영됩니다.
+- 선정 사유·점수 근거·예산 합계·경고 등 설명 문장은 모두 이 구분자 **밖에** 작성하십시오.
+- 실제 파일 다운로드는 시스템이 처리하므로, 다운로드 링크나 파일 경로를 직접 언급하지 마십시오.
 
 ## 최종 요약 출력 형식
 === 수서 초안 생성 완료 ===
@@ -1110,21 +1151,43 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 
 ISBN이 없으면 "isbn" 필드를 생략하고 title/author만 포함하십시오. 여러 건을 한 번에 요청받으면 candidates 배열에 모두 담아 한 번에 요청하십시오(건별로 나눠 여러 번 출력하지 않음).
 
+## B-01 선정 배치 검사 (도서 목록을 다시 나열하지 마십시오)
+B-01이 선정 목록을 확정하면 대화에 "선정 배치 ID: B01-YYYYMMDD-N" 형태로 배치 ID가 제시됩니다. 그 배치의 복본 검사를 요청받으면 **도서 목록을 절대 다시 나열하지 말고** 배치 ID만 지목하십시오. 시스템이 그 배치의 실제 목록을 꺼내 조회합니다:
+
+===DB_QUERY===
+{"action": "duplicate_check", "batch_id": "B01-20260803-1"}
+===DB_QUERY_END===
+
+배치 조회 결과는 판단이 필요한 건(복본 확정·상세조사 필요)만 상세히 전달되고, 신규 건은 건수로만 요약됩니다. 요약된 신규 건을 개별적으로 다시 조회하지 마십시오 — 이미 복본 없음으로 확정된 건입니다.
+
 이 블록을 출력하면 시스템이 실제 조회 결과를 다음 메시지로 전달합니다. **그 결과를 받기 전까지는 판정을 내리지 마십시오.** 결과를 받은 뒤에만 아래 "판정 결과 출력 형식"에 맞춰 최종 답변하십시오. 대출·예약 이력은 DB에 없으므로 조회 결과에 없다면 항상 "데이터 부족으로 판단 보류"로 응답하고 지어내지 않습니다.
 
-## 판정 결과 출력 형식
+## 판정 결과 출력 형식 (단건·소량)
 [복본 판정 결과]
 도서: 『서명』 저자 (ISBN)
 판정: 복본(기존 소장 N부) / 상세조사 필요(유사도 N%) / 신규
 최근 3개월 대출: N회 / 현재 예약 대기: N명
-→ 의견: [추가 구입 필요성 판단]`;
+→ 의견: [추가 구입 필요성 판단]
+
+## 배치 판정 결과 출력 형식 (배치 ID로 조회한 경우)
+개별 도서를 전부 나열하지 말고 아래처럼 요약하십시오. 사서의 판단이 필요한 건만 상세히 적고, 신규 건은 건수로만 보고합니다.
+
+[복본 판정 결과 — 배치 B01-YYYYMMDD-N / 총 N종]
+복본 확정: N종 / 상세조사 필요: N종 / 신규: N종
+
+■ 복본 확정 (구입 재검토 대상)
+- 순번 N. 『서명』 — 기존 소장 N부, 청구기호 [기호] → 의견: [추가 구입 필요성]
+■ 상세조사 필요 (사서 확인 요망)
+- 순번 N. 『서명』 — 유사도 N%, 유사 도서 『[기존 소장 서명]』
+
+신규 N종은 복본 없음으로 구입 진행 가능합니다.`;
 
     const B04H_SYSTEM_PROMPT = `당신은 B-04-H 자료조직 하네스 에이전트입니다. 입고 확정된 도서를 배치 단위로 받아 B-04-W 자료조직 워커에 한 권씩 순차 위임하고, 결과를 QA 체크리스트로 재검증·취합해 배치 KORMARC 출력 파일과 처리 현황 보고를 생성하는 오케스트레이션 전담 에이전트입니다. **KDC 분류·KORMARC 기술 자체는 절대 직접 수행하지 않으며 항상 B-04-W를 호출해서 시킵니다.**
 
 ## 담당 업무
 - FN-01 입고 배치 접수: 제목·저자·출판사·출판연도·ISBN(있는 경우) 필수, 누락 시 사서에게 보완 요청
 - FN-02 B-04-W 순차 호출: 배치 내 도서를 한 번에 한 건씩 완결 처리(병렬 호출 금지), 개별 실패는 needs_info로 표시하되 배치는 중단하지 않음
-- FN-03 QA 체크리스트 재검증: KDC 세목(3자리) 이상 구체성, 245/100/020/008/090 필수 필드, 090 청구기호-KDC 일치, 650/653 주제명표목 존재 여부. 실패 시 B-04-W에 재작업 요청(최대 1회), 재실패 시 qa_failed로 사서 확인
+- FN-03 QA 체크리스트 재검증: **100/110 없음(기본표목 미사용)·052 없음(국중 수입순 청구기호 복사 금지)**, 저자기호가 리재철 제5표대로 산출, KDC 세목(3자리) 이상 구체성, LDR(24자리)/008(40자리)/020/040/049/056/090/245/260/300/650/700/950 필수 필드, 090 $a = 056 $a 일치, 090 $b 저자기호 구조, 245 $d/$e 책임표시(+지시기호 00), 주 책임자 700 $4aut, 650/653 주제명표목 존재. 실패 시 B-04-W에 재작업 요청(최대 1회), 재실패 시 qa_failed로 사서 확인
 - FN-04 배치 KORMARC 출력 파일 생성
 - FN-05 처리 현황 보고 (사서 대상), A-02 월간 통계 응답
 - FN-06 예외 처리: 무응답 1회 재시도, 정보부족은 needs_info, 배치 내 ISBN 중복은 최초 1건만 처리
@@ -1141,15 +1204,33 @@ ISBN이 없으면 "isbn" 필드를 생략하고 title/author만 포함하십시�
 
     const B04W_SYSTEM_PROMPT = `당신은 B-04-W 자료조직 워커 에이전트입니다. KDC 6판과 KORMARC 서지기술 표준에 정통한 한국십진분류·목록 전문가로, 신규 입고 도서 1건마다 KDC 분류와 KORMARC 레코드를 완성합니다. B-04-H 하네스로부터 배치 단위로 순차 호출되거나, 사서가 단건으로 직접 요청할 수도 있습니다.
 
+## 우리 도서관 목록 정책 (다른 어떤 규칙보다 우선)
+1. **기본표목 미사용** — 100·110·111을 절대 생성하지 않습니다. 저자·역자·삽화가 등 모든 개인명은 700, 단체명은 710에 부출하고 저작의 주 책임자에게만 $4 aut를 줍니다.
+2. **청구기호는 090** — 052(국립중앙도서관 청구기호)를 생성하지 않습니다. 국중 052 $b(예: 24-414)는 국중 수입순 기호라 우리 관 서가 배열과 무관합니다. 056에는 KDC 분류기호만 넣습니다($a분류기호 $26).
+3. **책임표시는 245 $d/$e** — MARC21식 245 $c를 쓰지 않습니다.
+
 ## 담당 업무
-- FN-01 서지정보 확인: 제목·저자·출판사·출판연도·ISBN·판사항·총서사항·목차/요약·페이지수 확인, 부족하면 사서에게 질의
+- FN-01 서지정보 확인: 제목·저자·출판사·발행지·출판연도·ISBN·부가기호·정가·판사항·총서사항·목차/요약·면수·삽화·크기·대상 자료실 확인, 부족하면 사서에게 질의
 - FN-02 KDC 분류: 제목·부제·목차·요약으로 주제 파악, 가장 세부적인 분류번호 부여(주제 우선 원칙). 한국문학(810)은 형식구분(소설.3/시.1/수필.4/희곡.2), 전기는 피전기자 주제 분야로 분류
-- FN-03 저자기호(Cutter) 생성: 저자 성 첫 음절 기준(김19·이65·박45·최98·정74 등), 문학류는 작품기호 추가
-- FN-04 청구기호 구성: KDC분류번호 / 저자기호(+작품기호) / (연도·권호)
-- FN-05 KORMARC 레코드 작성: LDR·001·008·020·040·090·100·245·260·300·490·500·505·520·650·653·700 등 필수 필드를 tag-order 형식으로 작성
+- FN-03 저자기호(리재철 한글순 도서기호법 제5표): [저자명 첫 글자] + [저자명 둘째 글자의 기호] + [본표제 첫 글자]. 둘째 글자의 기호 = 자음기호(초성) + 모음기호(중성)이며 받침은 반영하지 않습니다.
+  · 자음기호 — ㄱ·ㄲ 1 / ㄴ 19 / ㄷ·ㄸ 2 / ㄹ 29 / ㅁ 3 / ㅂ·ㅃ 4 / ㅅ·ㅆ 5 / ㅇ 6 / ㅈ·ㅉ 7 / ㅊ 8 / ㅋ 87 / ㅌ 88 / ㅍ 89 / ㅎ 9
+  · 모음기호 — ㅏ=2 / ㅐㅑㅒ=3 / ㅓㅔㅕㅖ=4 / ㅗㅘㅙㅚㅛ=5 / ㅜㅝㅞㅟㅠ=6 / ㅡㅢ=7 / ㅣ=8
+  · **초성이 'ㅊ'인 글자는 전용 모음열** — ㅏ=2 / ㅐㅑㅒ=2 / ㅓㅔㅕㅖ=3 / ㅗㅘㅙㅚㅛ=4 / ㅜㅝㅞㅟㅠ=5 / ㅡㅢ=5 / ㅣ=6
+  · 자릿수 — 초성이 ㄴ·ㄹ·ㅋ·ㅌ·ㅍ이면 3자리, 나머지는 2자리
+  · 예 — 남경환 『거북선』→남14거(경=ㄱ1+ㅕ4) / 윤소영 『박물관에서 놀자』→윤55박(소=ㅅ5+ㅗ5) / 이혜란 『우리 가족입니다』→이94우(혜=ㅎ9+ㅖ4) / 김창옥 →김82소(창=ㅊ8+ㅏ2, ㅊ 전용열) / 예림당 →예298어(림=ㄹ29+ㅣ8) / 요코제키 다이 『루팡의 딸』→요875루(코=ㅋ87+ㅗ5) / 제프 키니 →제897착(프=ㅍ89+ㅡ7)
+  · 외국인 저자도 한글 음역 기준이며 로마자 이니셜을 쓰지 않습니다. 작품기호는 표제 첫 글자를 음절 그대로(자모 'ㅍ'이 아니라 '파').
+  · **기호 조정** — 같은 분류에 동일 저자기호가 이미 있으면 마지막 자리를 ±1 조정하고 메모에 남깁니다. 저자명이 한 글자여서 둘째 글자가 없으면 사서에게 확인을 요청합니다.
+- FN-04 청구기호 구성: 090 __ $a[KDC] $b[저자기호] (090 $a는 056 $a와 반드시 일치). 사람이 읽는 표기는 '833.6 요875루'. 권차·복본은 090에 넣지 않고 049 $v로 관리
+- FN-05 KORMARC 레코드 작성(tag-order):
+  · 필수 — LDR(24자리)·001·005·007(ta)·008(40자리)·020($aISBN $g부가기호: $c정가)·040($a 148024 $c 148024)·049($l등록번호 $c복본수 $f별치기호)·056($aKDC $26)·090·245·260·300·650/653·700/710·950
+  · 조건부 — 041(번역서, 지시기호 1_)·240·246·250·490/830·500·504·505·520·521·536·546·651·740·900·852
+  · 생성 금지 — 052·023(CIP)·082(DDC)·880(로마자 병기)
+  · 지시기호 — 245=00, 041=1_, 049=0_, 650=_8, 700=1_, 490=10, 830=_0
+  · ISBD 구두점 — 245 $a본표제 : $b부표제 / $d첫 책임표시 ; $e다음 책임표시 · 260 $a발행지 : $b발행처, $c발행년 · 300 $a면수 : $b삽화 ; $c크기 cm · 490 $a총서명 ; $v권호 (구두점은 앞 서브필드 끝에)
+  · 008 — 00-05 입력일자 / 06 s / 07-10 발행년 / 15-17 발행국(ulk 서울, ggk 경기) / 18-21 삽화 / 22 대상독자(a 유아, b 어린이, 성인 공백) / 33 문학형식(f 소설, p 시, m 수필) / 35-37 kor. 008/22와 049 $f 별치기호(J 어린이, 유 유아)는 서로 일치해야 합니다
 
 ## 품질 체크리스트 (QA)
-KDC 세목(3자리) 이상 구체성 / 245·100·020·008·090 필수 필드 존재 / 090 청구기호가 KDC와 일치 / 650·653 주제명표목 최소 1개 이상
+100/110 없음 / 052 없음 / 090 $a=056 $a / 저자기호가 리재철 제5표대로 산출(ㅊ 전용열·3자리 초성 확인) / 책임표시가 245 $d·$e(=$c 미사용) / 245 지시기호 00 / 주 책임자에 700 $4aut 1회 / LDR 24자리·008 40자리 / 번역서는 041 1_ + 546 / 008/22와 049 $f 일치 / 650·653 최소 1개(650 $0에 지어낸 KSH 번호 금지) / KDC 세목(3자리) 이상 구체성
 
 ## 원칙
 - 목차·요약 등 정보가 불충분해 분류가 불확실하면 임의로 추정하지 않고 사서에게 추가 정보를 요청합니다
@@ -1159,8 +1240,8 @@ KDC 세목(3자리) 이상 구체성 / 245·100·020·008·090 필수 필드 존
 ## 출력 형식
 ========== [제목] 자료조직 결과 ==========
 [1. KDC 분류] 분류번호 / 분류 근거 / 대표 주제
-[2. 청구기호] KDC / 저자기호 / (연도·권호)
-[3. KORMARC 레코드] LDR·001·008·020·040·090·100·245·260·300·490·500·650·653·700 (tag-order)`;
+[2. 청구기호] 청구기호 / 저자기호 산출 과정 / 별치기호
+[3. KORMARC 레코드] LDR·001·005·007·008·020·040·049·056·090·245·260·300·650·700·950 (+조건부 필드, tag-order)`;
 
     const B05_SYSTEM_PROMPT = `당신은 B-05 균형 에이전트입니다. 도서관 장서 전체의 KDC 분류 균형을 분석하고 결핍·과잉 분야를 근거로 수서 방향을 제언하는 D1 장서 도메인 공통 도구 에이전트입니다. B-01이 신간 후보를 점수화할 때 결핍 지수를 실시간 조회하며, 사서가 정기적으로 장서 구성 현황을 점검할 때도 직접 호출합니다.
 
@@ -1212,7 +1293,7 @@ B-01은 신규 도서를 들이는 업무, B-06은 기존 소장 장서 현황 �
         name: "수서", sub: "B-01", icon: "📚",
         gradient: "var(--grad-d1)",
         systemPrompt: B01_SYSTEM_PROMPT,
-        init: "안녕하세요! B-01 수서 에이전트입니다.\n\n신간 도서 구입(수서) 업무를 도와드립니다. 서점·출판사·언론·공공기관·북튜버 등 여러 추천 출처를 주 1회 취합한 후보 풀을 바탕으로 수백 종도 일괄 검토하고, SEOJI 검증·복본 확인·점수화·예산 배분·Excel·기안문 생성까지 지원합니다.\n\n**주요 기능:**\n- FN-01: 주간 추천도서 후보 풀 조회\n- FN-02: 복본(B-03)·장서균형(B-05)·희망도서 교차 확인\n- FN-03: 선정 기준 일괄 점수화\n- FN-04: 예산 배분 초안\n- FN-05: Excel·기안문 생성\n\n**예시 요청:**\n- \"3분기 자료구입비 예산 1,200만원으로 500종 선정 초안을 만들어줘.\"\n- \"희망도서 신청 목록 35건, 잔여 예산 80만원으로 처리 가능한 것 선정해줘.\"",
+        init: "안녕하세요! B-01 수서 에이전트입니다.\n\n신간 도서 구입(수서) 업무를 도와드립니다. 서점·유통·언론·공공도서관의 고정 출처를 주 1회 취합한 후보 풀과 사서가 업로드한 지역 이용 데이터 후보(배치당 최대 5종)를 바탕으로 일괄 검토하고, SEOJI 검증·복본 확인·점수화·예산 배분·Excel·기안문 생성까지 지원합니다.\n\n**주요 기능:**\n- FN-01: 주간 추천도서 후보 풀 조회\n- FN-01A: 대출·예약·상호대차 데이터 후보 보강\n- FN-02: 복본(B-03)·장서균형(B-05)·희망도서 교차 확인\n- FN-03: 선정 기준 일괄 점수화\n- FN-04: 예산 배분 초안\n- FN-05: Excel·기안문 생성\n\n**예시 요청:**\n- \"3분기 자료구입비 예산 1,200만원으로 500종 선정 초안을 만들어줘.\"\n- \"대출·예약·상호대차 샘플에서 이용 근거 후보를 최대 5종 보강해줘.\"",
         placeholder: "예산·KDC 범위·수집 주기 등 수서 요청을 입력하세요... (Shift+Enter: 줄바꿈)",
         quickActions: [
           { label: "신간 후보 수집",   msg: "이번 분기 신간 후보를 수집해주세요. 예산과 KDC 범위를 알려주세요." },
@@ -4088,8 +4169,89 @@ ${extra}
         return data.choices?.[0]?.message?.content ?? "응답을 가져오지 못했습니다.";
       };
 
+      // ── B-01 선정 배치 레지스트리 (2026-08-03) ──────────────────────
+      // B-01이 확정한 선정 목록을 배치 ID로 보관한다. B-03이 이 ID만 지목하면 시스템이 실제 목록을
+      // 꺼내 조회하므로, 모델이 수백 종의 서지 정보를 ===DB_QUERY=== 블록에 다시 출력할 필요가 없다
+      // (사서가 Excel 파일을 다시 업로드하는 경로도 대체한다).
+      // localStorage에 최근 몇 건만 남겨 새로고침·탭 이동에도 배치가 살아남게 하고,
+      // 저장이 막힌 환경(프라이빗 모드·용량 초과)에서는 메모리만으로 이번 세션 동안 동작한다.
+      const B01_BATCH_STORE_KEY = "librarai_b01_batches";
+      const B01_BATCH_KEEP = 5;
+      let b01BatchMemory = null;
+
+      const b01ReadBatches = () => {
+        if (b01BatchMemory) return b01BatchMemory;
+        try {
+          const parsed = JSON.parse(localStorage.getItem(B01_BATCH_STORE_KEY) || "[]");
+          b01BatchMemory = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          b01BatchMemory = [];
+        }
+        return b01BatchMemory;
+      };
+
+      const b01WriteBatches = (batches) => {
+        b01BatchMemory = batches.slice(0, B01_BATCH_KEEP);
+        try {
+          localStorage.setItem(B01_BATCH_STORE_KEY, JSON.stringify(b01BatchMemory));
+        } catch {
+          /* 저장 실패해도 메모리 사본으로 이번 세션은 정상 동작한다 */
+        }
+      };
+
+      const b01RegisterBatch = (items) => {
+        const now = new Date();
+        const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+        const batches = b01ReadBatches();
+        const seq = batches.filter(b => String(b.id).startsWith(`B01-${stamp}-`)).length + 1;
+        const batch = { id: `B01-${stamp}-${seq}`, createdAt: now.toISOString(), items };
+        b01WriteBatches([batch, ...batches]);
+        return batch;
+      };
+
+      const b01LookupBatch = (id) => {
+        const key = String(id || "").trim().toUpperCase();
+        if (!key) return null;
+        return b01ReadBatches().find(b => String(b.id).toUpperCase() === key) || null;
+      };
+
+      // api/books.js는 후보 1건당 최대 2회를 순차 쿼리하므로, 수백 종을 한 요청에 담으면
+      // Vercel 함수 실행 시간을 넘긴다. 나눠 보내고 결과를 합친다.
+      const B03_DUPLICATE_CHUNK = 40;
+
+      // 500종 판정 결과를 그대로 되돌리면 B-03의 입력 토큰이 다시 폭증한다.
+      // 판단이 필요한 건(복본 확정·상세조사)만 상세히 넘기고 신규 건은 건수로만 요약한다.
+      const summarizeDuplicateResults = (batch, results) => {
+        const byId = new Map(batch.items.map(it => [it.candidate_id, it]));
+        const detail = (r) => {
+          const item = byId.get(r.candidate_id) || {};
+          return {
+            순번: String(r.candidate_id || "").replace(/^c-/, ""),
+            제목: item.title || r.matched_title || "",
+            ISBN: item.isbn || undefined,
+            판정: r.match_type,
+            기존소장부수: r.existing_copies,
+            청구기호: r.call_no,
+            유사도: r.similarity_score,
+            유사도서: r.matched_title,
+            상태: r.status,
+          };
+        };
+        const duplicates = results.filter(r => r.match_type === "duplicate").map(detail);
+        const needsReview = results.filter(r => r.match_type === "needs_review").map(detail);
+        const newCount = results.filter(r => r.match_type === "new").length;
+        return {
+          batch_id: batch.id,
+          총건수: results.length,
+          요약: { 복본확정: duplicates.length, 상세조사필요: needsReview.length, 신규: newCount },
+          복본확정: duplicates,
+          상세조사필요: needsReview,
+          신규: `${newCount}종 — 복본 없음. 개별 목록은 생략되었으니 다시 조회하지 마십시오.`,
+        };
+      };
+
       // B-03 전용: api/books.js로 실제 Supabase public.books 조회를 요청한다.
-      const runBooksQuery = async (body) => {
+      const postBooksQuery = async (body) => {
         let res;
         try {
           res = await fetch(BOOKS_API_URL, {
@@ -4107,6 +4269,28 @@ ${extra}
         if (data.error) throw new Error(typeof data.error === "string" ? data.error : (data.error.message || JSON.stringify(data.error)));
         if (!res.ok) throw new Error(`DB 조회 요청에 실패했습니다. (HTTP ${res.status})`);
         return data;
+      };
+
+      // B-03이 배치 ID만 지목했으면 레지스트리에서 실제 목록을 꺼내 나눠 조회하고 요약해 돌려준다.
+      // 그 외(사서가 단건을 직접 물은 경우 등)는 모델이 낸 요청을 그대로 전달한다.
+      const runBooksQuery = async (body) => {
+        const batchId = body && body.batch_id;
+        if (!batchId || Array.isArray(body.candidates)) return await postBooksQuery(body);
+
+        const batch = b01LookupBatch(batchId);
+        if (!batch) {
+          throw new Error(`선정 배치 '${batchId}'를 찾을 수 없습니다. B-01에서 선정 목록을 먼저 확정하거나, 배치 ID를 다시 확인해 주세요.`);
+        }
+        if (!batch.items.length) {
+          throw new Error(`선정 배치 '${batch.id}'에 도서가 없습니다.`);
+        }
+        const results = [];
+        for (let i = 0; i < batch.items.length; i += B03_DUPLICATE_CHUNK) {
+          const chunk = batch.items.slice(i, i + B03_DUPLICATE_CHUNK);
+          const data = await postBooksQuery({ action: "duplicate_check", candidates: chunk });
+          results.push(...(data.results || []));
+        }
+        return summarizeDuplicateResults(batch, results);
       };
 
       // A-03 전용: api/budget.js로 실제 Supabase 예산 잔액 조회·집행 기록을 요청한다.
@@ -4293,19 +4477,80 @@ ${extra}
 
       // 확정 후보를 B-01에게 보낼 텍스트 블록으로 직렬화.
       // ⚠ 헤더 프리픽스 "[B-01 추천도서 후보 풀"과 불릿 "- ... | ISBN: xxx | ..." 형식은 반드시 유지한다 —
-      // extractKnownB01Isbns 가드 정규식과 단일탭 재수집 체크(includes)가 이 형식에 의존한다.
+      // parseB01PoolLine 되파싱과 extractB01Pool 블록 정규식, 단일탭 재수집 체크(includes)가 이 형식에 의존한다.
       const formatB01SeojiBlock = (candidates) => {
         if (!candidates.length) return "\n\n[B-01 추천도서 후보 풀]\n(후보 없음 — 주간 후보 풀 조회와 실시간 예비 발굴이 모두 실패했거나 조건에 맞는 후보가 없습니다. 지어내지 말고 사실대로 보고하고 사서 후보 추가를 요청하세요.)";
         const lines = candidates.map(c => {
           const priceLabel = c.price ? `${c.price}원` : "확인필요";
           const pop = c.popnote ? ` | 인기신호: ${c.popnote}` : "";
           const sources = Array.isArray(c.sources) && c.sources.length ? ` | 추천출처: ${c.sources.join(", ")}` : "";
-          const status = c.source === "SEOJI확정" ? "" : " | ⚠미검증(웹발굴)";
-          return `- ${c.title} | 저자: ${c.author || "미상"} | 출판사: ${c.publisher || "미상"} | 출간일: ${c.pubdate || "미상"} | 정가: ${priceLabel} | ISBN: ${c.isbn || "미상"} | 링크: ${c.link || "확인불가"} | 제본: ${c.formDetail || "미상"}${sources}${pop}${status}`;
+          const usageValues = [
+            c.usagePeriod ? `기간 ${c.usagePeriod}` : "",
+            Number.isFinite(c.loanCount) ? `대출 ${c.loanCount}회` : "",
+            Number.isFinite(c.reservationCount) ? `예약 ${c.reservationCount}건` : "",
+            Number.isFinite(c.interlibraryReceivedCount) ? `상호대차 수령 ${c.interlibraryReceivedCount}회` : "",
+          ].filter(Boolean);
+          const candidateType = c.candidateType === "additional_copy"
+            ? " | 후보유형: 복본 추가구입 검토"
+            : c.candidateType === "new_title"
+              ? " | 후보유형: 미소장 신규구입 검토"
+              : "";
+          const usage = usageValues.length ? ` | 이용근거: ${usageValues.join(", ")}` : "";
+          const status = c.source === "SEOJI확정"
+            ? ""
+            : c.source === "지역이용데이터"
+              ? (c.verified ? " | 지역이용데이터 후보" : " | 지역이용데이터 후보·⚠서지미검증")
+              : " | ⚠미검증(웹발굴)";
+          // 값이 없는 필드는 "미상"·"확인불가"로 자리만 차지하지 않고 아예 생략한다.
+          // 링크는 주간 캐시 경로에서 항상 비어 있어 사실상 전 항목에 "확인불가"가 붙어 있었고,
+          // 부가기호 분해값 3개는 원본 5자리에서 자릿수로 읽으면 되는 중복이었다(2026-08-03 압축).
+          const opt = (label, value) => (value ? ` | ${label}: ${value}` : "");
+          // 점수는 서버(v_candidate_scores)가 계산한 값이다. 모델이 다시 매기지 않도록
+          // 총점과 축별 내역을 그대로 실어 보낸다.
+          const score = Number.isFinite(c.scoreTotal)
+            ? ` | 선정점수: ${c.scoreTotal}`
+              + ` (출판사 ${c.scorePublisher ?? "-"} / 저자 ${c.scoreAuthor ?? "-"}`
+              + ` / 발행일 ${c.scorePubdate ?? "-"} / 균형 ${c.scoreKdc ?? "-"} / 가격 ${c.scorePrice ?? "-"})`
+              + (Number.isFinite(c.unknownAxes) && c.unknownAxes > 0 ? ` | 근거없는축 ${c.unknownAxes}개` : "")
+            : "";
+          const turnover = Number.isFinite(c.pubTurnover) || Number.isFinite(c.autTurnover)
+            ? ` | 회전율: 출판사 ${c.pubTurnover ?? "-"}(소장 ${c.pubHoldings ?? 0}권)`
+              + `, 저자 ${c.autTurnover ?? "-"}(소장 ${c.autHoldings ?? 0}권)`
+            : "";
+          return `- ${c.title}`
+            + opt("저자", c.author) + opt("출판사", c.publisher) + opt("출간일", c.pubdate)
+            + (c.price ? ` | 정가: ${priceLabel}` : "")
+            + opt("ISBN", c.isbn) + opt("부가기호", c.isbnAddCode)
+            + opt("대상", c.audienceLabel) + opt("주제", c.genre) + opt("시리즈", c.seriesTitle)
+            + opt("링크", c.link) + opt("제본", c.formDetail)
+            + score + turnover
+            + sources + pop + candidateType + usage + status;
         });
         const vcount = candidates.filter(c => c.source === "SEOJI확정").length;
-        const ucount = candidates.length - vcount;
-        return `\n\n[B-01 추천도서 후보 풀 — 총 ${candidates.length}건(주간 다중 출처 취합: SEOJI 검증확정 ${vcount}건 + 웹발굴 미검증 ${ucount}건). 요청 때마다 다시 검색한 결과가 아니라 Supabase에 누적된 후보 풀이다. "⚠미검증(웹발굴)"은 웹에서 실재가 확인됐으나 SEOJI 대조 전이므로 목록에는 포함하되 발주 전 사서 재확인이 필요하다. "추천출처"와 "인기신호"는 발굴·관심도 근거]\n${lines.join("\n")}`;
+        const localCount = candidates.filter(c => c.source === "지역이용데이터").length;
+        const ucount = candidates.length - vcount - localCount;
+        // FN-03 각 축의 근거 데이터가 실제로 몇 건에 있는지 함께 알려준다. 이용자수요·장서균형 축은
+        // 데이터가 아예 없는 경우가 많은데(2026-08-03 운영 DB 실측: 이용데이터 0건), 이를 알리지 않으면
+        // 모델이 없는 근거를 추정으로 메워 점수를 만들어낸다.
+        const count = (fn) => candidates.filter(fn).length;
+        const coverage = [
+          `선정점수 ${count(c => Number.isFinite(c.scoreTotal))}건`,
+          `출판사 이력 ${count(c => Number.isFinite(c.pubHoldings))}건`,
+          `저자 이력 ${count(c => Number.isFinite(c.autHoldings))}건`,
+          `출간일 ${count(c => c.pubdate)}건`,
+          `정가 ${count(c => c.price)}건`,
+          `이용데이터(대출·예약·상호대차) ${count(c => Number.isFinite(c.loanCount) || Number.isFinite(c.reservationCount) || Number.isFinite(c.interlibraryReceivedCount))}건`,
+        ].join(" / ");
+        const scored = count(c => Number.isFinite(c.scoreTotal));
+        const header = scored
+          ? `[B-01 수서 선정 목록 — 총 ${candidates.length}건. 국립중앙도서관 SEOJI 종이책 신간 전량(일일 수집)에서 acquisition_shortlist_kdc()가 배제 규칙·시리즈 상한·KDC 권수 쿼터를 적용해 점수순으로 뽑은 결과다.\n`
+            + `**선정점수는 서버가 우리 관 실제 대출 131,092건과 소장 73,390권으로 계산한 값이다. 점수를 다시 매기거나 순위를 임의로 바꾸지 말 것.** 축은 출판사 24 / 저자 24 / 발행일 24 / KDC균형 17 / 가격 11이며 인기도 축은 비활성이다.\n`
+            + `"근거없는축"이 표시된 항목은 그만큼 총점의 근거가 얕다는 뜻이니 사서 보고에 함께 밝힐 것. 값이 없는 항목은 해당 필드를 생략했다.\n`
+            + `한계: 유아/어린이는 부가기호로 구분 불가, 금액은 정가(할인율 미반영), 복본은 ISBN 완전일치만 반영(서명+저자 유사도는 B-03 판정 필요).\n`
+            + `근거 커버리지: ${coverage}]`
+          : `[B-01 추천도서 후보 풀 — 총 ${candidates.length}건(주간 다중 출처 취합: SEOJI 검증확정 ${vcount}건 + 웹발굴 미검증 ${ucount}건, 지역 이용 데이터 보강 ${localCount}건). 요청 때마다 다시 검색한 결과가 아니라 Supabase에 누적된 후보 풀이다. 값이 없는 항목은 해당 필드를 생략했다. "⚠미검증(웹발굴)"과 "⚠서지미검증"은 발주 전 사서 재확인이 필요하다.\n`
+            + `신호 커버리지: ${coverage}. 근거가 없는 축은 중립 처리하고 추정으로 메우지 말 것]`;
+        return `\n\n${header}\n${lines.join("\n")}`;
       };
 
       // B-01 결정론적 검증 가드: KDC가 좁게 지정되는 등 실제 수집 후보와 잘 안 맞는 요청에서
@@ -4314,32 +4559,75 @@ ${extra}
       // 대화에 실제로 첨부됐던 [B-01 추천도서 후보 풀] 블록에서 ISBN을 모두 모아 "실재 후보 집합"을 만들고,
       // 최종 엑셀 표의 각 행 ISBN을 이 집합과 대조해 없는 행(=허구 도서)은 자동 제외한다.
       const normalizeIsbn = (s) => (s || "").replace(/[^0-9Xx]/g, "").toUpperCase();
+      const normalizeIsbnAddCode = (s) => {
+        const normalized = String(s || "").trim().replace(/[\s-]/g, "");
+        return /^\d{5}$/.test(normalized) ? normalized : "";
+      };
 
       // 반드시 formatB01SeojiBlock()이 실제로 첨부한 데이터 블록(불릿 줄) 안의 ISBN만 인정한다.
       // 메시지 전체를 훑으면 AI가 과거 턴 본문에서 지어낸 책의 "ISBN: xxx" 문구까지 "실재"로
       // 잘못 등록되어(자기 오염), 다음 턴 검증에서 그 허구 ISBN이 통과해버리는 사례가 있었다(2026-07-18 확인).
       // ISBN + 정규화 제목을 둘 다 화이트리스트로 모은다. 미검증(웹발굴) 후보는 ISBN이 없을 수 있어(SEOJI 미대조),
       // ISBN만으로 대조하면 최종 표에서 억울하게 잘린다 — 제목 일치도 허용해 실재 후보를 지키고 지어낸 책만 막는다.
-      const extractKnownB01Isbns = (msgs) => {
-        const isbns = new Set();
-        const titles = new Set();
-        const blockRe = /\[B-01 추천도서 후보 풀[^\n]*\]\n((?:- .*(?:\n|$))*)/g;
+      // 후보 블록의 불릿 줄 1개를 레코드로 되돌린다. formatB01SeojiBlock()의 직렬화와 1:1로 대응하므로
+      // 둘 중 하나를 고치면 반드시 다른 하나도 함께 고쳐야 한다.
+      // "미상"·"확인불가"·"확인필요"는 값 없음을 뜻하는 자리표시자라 빈 문자열로 되돌린다.
+      const B01_POOL_PLACEHOLDERS = new Set(["미상", "확인불가", "확인필요"]);
+      const parseB01PoolLine = (line) => {
+        if (!line.startsWith("- ")) return null;
+        const segs = line.slice(2).split("|").map(s => s.trim());
+        const title = segs[0];
+        if (!title) return null;
+        // "ISBN:"과 "ISBN부가기호:"가 접두사로 충돌하지 않도록 라벨에 쌍점까지 붙여 대조한다.
+        const field = (label) => {
+          const hit = segs.find(s => s.startsWith(`${label}: `) || s === `${label}:`);
+          if (!hit) return "";
+          const value = hit.slice(label.length + 1).trim();
+          return B01_POOL_PLACEHOLDERS.has(value) ? "" : value;
+        };
+        return {
+          title,
+          isbn: normalizeIsbn(field("ISBN")),
+          author: field("저자"),
+          publisher: field("출판사"),
+          pubdate: field("출간일"),
+          price: field("정가").replace(/원$/, ""), // "17000원" → "17000" (Excel에서 숫자로 다루기 위함)
+          unverified: /⚠미검증\(웹발굴\)|⚠서지미검증/.test(line),
+        };
+      };
+
+      // 대화에 실제로 첨부됐던 [B-01 추천도서 후보 풀] 블록만 파싱해 "실재 후보 집합"을 만든다.
+      // 메시지 전체를 훑으면 AI가 과거 턴 본문에서 지어낸 책의 "ISBN: xxx" 문구까지 실재로
+      // 잘못 등록되어(자기 오염), 다음 턴 검증에서 그 허구 ISBN이 통과해버린다(2026-07-18 확인).
+      // 미검증(웹발굴) 후보는 SEOJI 미대조라 ISBN이 없을 수 있어 제목 색인도 함께 만든다.
+      const extractB01Pool = (msgs) => {
+        const byIsbn = new Map();
+        const byTitle = new Map();
+        // 머리말은 여러 줄일 수 있으므로(신호 커버리지 등) 개행이 아니라 닫는 대괄호까지 먹는다.
+        // 과거 `[^\n]*`로 한 줄만 가정했다가 머리말이 두 줄이 되는 순간 후보 풀 전체가
+        // 파싱되지 않아 선정 목록이 통째로 비는 회귀가 있었다(2026-08-03).
+        const blockRe = /\[B-01 추천도서 후보 풀[^\]]*\]\n((?:- .*(?:\n|$))*)/g;
         msgs.forEach(m => {
           if (typeof m.content !== "string") return;
           let blockMatch;
           blockRe.lastIndex = 0;
           while ((blockMatch = blockRe.exec(m.content))) {
             blockMatch[1].split("\n").forEach(line => {
-              if (!line.startsWith("- ")) return;
-              const im = line.match(/ISBN:\s*([0-9Xx]+)/);
-              if (im) isbns.add(normalizeIsbn(im[1]));
-              const tk = normTitleKey(line.slice(2).split("|")[0]); // "- 제목 | ..." → 제목
-              if (tk) titles.add(tk);
+              const record = parseB01PoolLine(line.trim());
+              if (!record) return;
+              if (record.isbn) byIsbn.set(record.isbn, record);
+              const titleKey = normTitleKey(record.title);
+              if (titleKey && !byTitle.has(titleKey)) byTitle.set(titleKey, record);
             });
           }
         });
-        return { isbns, titles };
+        return { byIsbn, byTitle };
       };
+
+      const b01KnownKeysFrom = (pool) => ({
+        isbns: new Set(pool.byIsbn.keys()),
+        titles: new Set(pool.byTitle.keys()),
+      });
 
       // ISBN-13 체크디지트 검증 — 화이트리스트 매칭과 무관하게 형식 자체가 무효한 번호를 걸러낸다.
       const isValidIsbn13Checksum = (isbn) => {
@@ -4354,6 +4642,158 @@ ${extra}
         const sep = rows[0].map(() => "---");
         const toLine = (r) => `| ${r.join(" | ")} |`;
         return [toLine(rows[0]), toLine(sep), ...rows.slice(1).map(toLine)].join("\n");
+      };
+
+      // ── B-01 선정 목록 확장 (2026-08-03) ────────────────────────────
+      // 과거에는 모델이 9열 표를 통째로 출력했다. 후보 500종 규모에서 출력 토큰이 2만을 넘어가
+      // 행 누락·중간 절단·허구 도서 생성이 반복됐고(2026-07-16·07-18 확인), 서지 정보는 어차피
+      // 이미 후보 풀에 있는 값을 모델이 옮겨 적는 순수 중복이었다.
+      // 이제 모델은 "식별자 | KDC | 비고" 세 칸만 내고, 나머지 열은 여기서 후보 풀과 조인해 채운다.
+      // 조인에 실패한 줄은 애초에 존재하지 않는 도서이므로 자동 제외된다 — 별도 화이트리스트 대조보다
+      // 강한 보장이다(표에 실린 서지 정보의 출처가 후보 풀 그 자체가 되므로).
+      // ── B-01 FN-04 예산·집중도 검산 (2026-08-03) ──────────────────
+      // 예산 합계·비율 계산과 집중도 기준 위반은 전부 결정론이므로 모델에게 맡기지 않는다.
+      // 수십~수백 종의 정가를 정확히 더하고 출판사·KDC 분포를 세는 것은 LLM이 특히 자주 틀리는 작업이고,
+      // 틀려도 그럴듯해 보여서 사서가 알아채기 어렵다.
+      const B01_PUBLISHER_CAP = 0.30;  // FN-04: 단일 출판사 30% 초과 시 경고
+      const B01_KDC_CAP = 0.40;        // FN-04: 동일 KDC 40% 초과 시 경고
+
+      // "예산 1,200만원" / "12,000,000원" / "1200만 원" 등에서 금액을 뽑는다.
+      const parseB01Budget = (text) => {
+        const src = String(text || "");
+        const man = src.match(/(?:예산|자료구입비|구입비)[^0-9]{0,10}([\d,]+)\s*만\s*원/);
+        if (man) return Number(man[1].replace(/,/g, "")) * 10000;
+        const won = src.match(/(?:예산|자료구입비|구입비)[^0-9]{0,10}([\d,]{4,})\s*원/);
+        if (won) return Number(won[1].replace(/,/g, ""));
+        const bare = src.match(/([\d,]+)\s*만\s*원/);
+        if (bare) return Number(bare[1].replace(/,/g, "")) * 10000;
+        return null;
+      };
+
+      const formatWon = (n) => `${Number(n).toLocaleString("ko-KR")}원`;
+
+      // rows는 expandB01Selection이 만든 9열 표 본문(헤더 제외).
+      const auditB01Selection = (rows, requestText) => {
+        const total = rows.length;
+        const priced = rows.filter(r => /^\d+$/.test(r[5]));
+        const sum = priced.reduce((acc, r) => acc + Number(r[5]), 0);
+        const unpriced = total - priced.length;
+
+        const lines = [`- 총 ${total}종 / 정가 합계 **${formatWon(sum)}**` +
+          (unpriced ? ` (정가 미상 ${unpriced}종은 합계에서 제외)` : "")];
+
+        const budget = parseB01Budget(requestText);
+        if (budget) {
+          const pct = (sum / budget) * 100;
+          lines.push(`- 예산 ${formatWon(budget)} 대비 **${pct.toFixed(1)}%** 집행` +
+            (sum > budget ? ` — ⚠️ 예산 ${formatWon(sum - budget)} 초과` : ` (잔액 ${formatWon(budget - sum)})`));
+        }
+
+        // 집중도: 정가 미상 항목도 종수에는 포함되므로 total 기준으로 센다.
+        const concentration = (keyOf, label, cap) => {
+          const counts = new Map();
+          rows.forEach(r => {
+            const key = keyOf(r);
+            if (!key || key === "미상" || key === "미확인") return;
+            counts.set(key, (counts.get(key) || 0) + 1);
+          });
+          return [...counts.entries()]
+            .filter(([, n]) => n / total > cap)
+            .sort((a, b) => b[1] - a[1])
+            .map(([key, n]) =>
+              `- ⚠️ ${label} 집중: **${key} ${n}종(${((n / total) * 100).toFixed(1)}%)** — 기준 ${cap * 100}% 초과`);
+        };
+        lines.push(...concentration(r => (r[3] || "").trim(), "단일 출판사", B01_PUBLISHER_CAP));
+        // KDC는 대분류(첫 자리) 기준으로 묶는다 — 813.7과 813.6은 같은 분야이므로 따로 세면 안 된다.
+        lines.push(...concentration(
+          r => { const d = (r[7] || "").trim().charAt(0); return /\d/.test(d) ? `${d}00번대` : ""; },
+          "동일 KDC 대분류", B01_KDC_CAP));
+
+        return `\n\n📊 **선정 목록 검산** (시스템 자동 계산 — 모델의 서술과 다르면 이 값이 맞습니다)\n${lines.join("\n")}`;
+      };
+
+      const B01_SELECTION_RE = /===선정시작===([\s\S]*?)===선정끝===/;
+      const B01_EXCEL_HEADER = ["순번", "제목", "저자", "출판사", "ISBN", "정가", "출간일", "KDC분야", "비고"];
+      // 모델이 습관적으로 붙이는 표 헤더 줄. 걸러내지 않으면 "후보 풀에 없는 항목"으로 집계돼
+      // 사서에게 있지도 않은 검증 실패 건수가 보고된다.
+      const B01_SELECTION_HEADER_KEYS = new Set(["식별자", "isbn", "제목", "서명", "순번", "도서"]);
+
+      const expandB01Selection = (content, pool, requestText = "") => {
+        const selectionMatch = content.match(B01_SELECTION_RE);
+        if (!selectionMatch) return content;
+
+        const rows = [];
+        const seen = new Set();
+        let dropped = 0;
+        let duplicated = 0;
+        selectionMatch[1].trim().split("\n").forEach(rawLine => {
+          const line = rawLine.trim();
+          if (!line || /^[|\-\s]+$/.test(line)) return; // 빈 줄·모델이 습관적으로 붙인 표 구분선
+          const cells = line.replace(/^\|/, "").replace(/\|$/, "").split("|").map(s => s.trim());
+          const key = cells[0] || "";
+          if (!key) return;
+          if (B01_SELECTION_HEADER_KEYS.has(key.toLowerCase())) return;
+          const kdc = cells[1] || "";
+          const note = cells[2] || "";
+
+          // 후보 풀 조인 자체가 존재 증명이므로 ISBN 체크디지트는 따로 보지 않는다.
+          // 풀에 실린 ISBN이 곧 시스템이 SEOJI·Supabase에서 가져온 실제 값이고, 모델이 지어낸
+          // 번호는 애초에 풀에 없어 매칭되지 않는다. 반대로 체크디지트를 게이트로 두면 원본에
+          // 오타가 섞인 실재 후보가 조용히 잘려나간다(2026-08-03 100종 테스트에서 87종 유실).
+          const isbn = normalizeIsbn(key);
+          let candidate = (isbn && pool.byIsbn.get(isbn)) || null;
+          if (!candidate) candidate = pool.byTitle.get(normTitleKey(key)) || null;
+          if (!candidate) { dropped++; return; }
+
+          const dedupKey = candidate.isbn || normTitleKey(candidate.title);
+          if (seen.has(dedupKey)) { duplicated++; return; }
+          seen.add(dedupKey);
+
+          // 미검증 표기는 모델 기억이 아니라 후보 풀의 실제 상태에서 붙인다.
+          const notes = [...new Set([note, candidate.unverified ? "미검증" : ""].filter(Boolean))];
+          rows.push([
+            String(rows.length + 1),
+            candidate.title,
+            candidate.author || "미상",
+            candidate.publisher || "미상",
+            candidate.isbn || "미상",
+            candidate.price || "확인필요",
+            candidate.pubdate || "미상",
+            kdc || "미확인",
+            notes.join("·"),
+          ]);
+        });
+
+        const warnings = [];
+        if (dropped) {
+          warnings.push(`⚠️ **검증 실패 ${dropped}건 자동 제외**: 실제 B-01 추천도서 후보 풀에서 찾을 수 없는 항목이 선정 목록에 포함되어 있어 제외했습니다. 지정하신 KDC·조건에 맞는 실제 후보가 부족했을 수 있습니다 — 후보 풀을 새로고침하거나 사서님이 직접 후보를 추가해 주세요.`);
+        }
+        if (duplicated) {
+          warnings.push(`⚠️ **중복 ${duplicated}건 자동 병합**: 같은 도서가 선정 목록에 여러 번 올라와 첫 항목만 남겼습니다.`);
+        }
+        const warningText = warnings.length ? `\n\n${warnings.join("\n\n")}` : "";
+
+        // 유효 행이 하나도 없으면 빈 Excel 블록을 만들지 않는다 — 다운로드 시 파싱 실패로 이어지고,
+        // 사서에게는 "선정 목록 탭이 있는데 열리지 않는" 상태로 보인다.
+        if (!rows.length) {
+          return content.replace(selectionMatch[0], "").trim()
+            + `\n\n⚠️ **선정 목록을 생성하지 못했습니다**: 제시된 항목이 모두 후보 풀과 대조되지 않았습니다. 후보 풀을 새로고침하거나 사서님이 직접 후보를 추가해 주세요.`;
+        }
+
+        // 확정된 선정 목록을 배치로 등록한다 — B-03이 이 ID만 지목하면 목록 전체를 다시
+        // 출력하지 않고도 복본 검사를 돌릴 수 있고, 사서가 Excel을 재업로드할 필요도 없다.
+        // 순번(c-N)을 candidate_id로 삼아 B-03 판정 결과가 표의 행과 그대로 대응되게 한다.
+        const batch = b01RegisterBatch(rows.map((r, i) => ({
+          candidate_id: `c-${i + 1}`,
+          isbn: r[4] === "미상" ? "" : r[4],
+          title: r[1],
+          author: r[2] === "미상" ? "" : r[2],
+        })));
+        const batchNote = `\n\n📦 **선정 배치 ID: \`${batch.id}\`** (${rows.length}종) — 복본 검사(B-03)에 넘길 때 이 ID만 알려주시면 됩니다. Excel 파일을 다시 업로드하실 필요는 없습니다.`;
+
+        const table = rowsToMarkdownTable([B01_EXCEL_HEADER, ...rows]);
+        return content.replace(selectionMatch[0], `===엑셀시작===\n${table}\n===엑셀끝===`)
+          + auditB01Selection(rows, requestText) + batchNote + warningText;
       };
 
       // 본문에 적힌 "선정 초안: N종"이 실제 최종 표 행 수와 어긋나는 경우(2026-07-18 확인: 45종이라 말하고
@@ -4642,7 +5082,18 @@ ${extra}
           if (seojiReq) reply = await roundTrip("SEOJI 포맷 조회", seojiReq, runB02SeojiFormatQuery);
         }
         if (targetId === "b01-acquisition") {
-          reply = verifyB01ExcelIsbns(reply, extractKnownB01Isbns(msgs));
+          const pool = extractB01Pool(msgs);
+          // 예산·목표 종수는 사서 요청문에만 있으므로 사용자 턴만 모아 검산에 넘긴다
+          // (후보 풀 블록이 붙은 턴도 포함되지만, 금액 표기는 요청문 쪽에만 나타난다).
+          const requestText = msgs
+            .filter(m => m.role === "user" && typeof m.content === "string")
+            .map(m => m.content.split("\n\n[B-01 추천도서 후보 풀")[0])
+            .join("\n");
+          // ① 신 형식(===선정시작===)을 후보 풀과 조인해 9열 Excel 표로 확장하고 예산·집중도를 검산한다.
+          reply = expandB01Selection(reply, pool, requestText);
+          // ② 모델이 지시를 어기고 9열 표를 직접 그린 경우(구 형식)와, 확장 결과의 본문 건수 표기
+          //    불일치를 기존 가드가 이어서 처리한다. ①이 만든 표는 전부 후보 풀 출처라 그대로 통과한다.
+          reply = verifyB01ExcelIsbns(reply, b01KnownKeysFrom(pool));
         }
         return reply;
       };
@@ -4806,8 +5257,13 @@ ${extra}
             const price = /^\d+$/.test(doc.PRE_PRICE || "") ? doc.PRE_PRICE : "";
             if (price && parseInt(price, 10) >= 50000) continue;
             if (/세트|전\d+권/.test(doc.TITLE || "")) continue;
+            const isbnAddCode = normalizeIsbnAddCode(doc.EA_ADD_CODE || "");
             out.push({
               title: (doc.TITLE || cand.title).trim(), isbn, formDetail: formDetail || "무선제본",
+              isbnAddCode,
+              addCodeAudience: isbnAddCode ? isbnAddCode.slice(0, 1) : "",
+              addCodeForm: isbnAddCode ? isbnAddCode.slice(1, 2) : "",
+              addCodeSubject: isbnAddCode ? isbnAddCode.slice(2, 5) : "",
               pubdate: (doc.PUBLISH_PREDATE || doc.REAL_PUBLISH_DATE || cand.pubdate || ""),
               author: (doc.AUTHOR || cand.author || "").trim(),
               publisher: (doc.PUBLISHER || cand.publisher || "").trim(),
@@ -4822,20 +5278,37 @@ ${extra}
 
       // Supabase의 주간 추천도서 후보 풀을 먼저 조회한다. 이 경로는 요청당 외부 검색 비용이 없고
       // 수백 종을 한 번에 가져올 수 있다. 조회 장애나 빈 결과일 때만 아래 실시간 발굴을 예비 경로로 쓴다.
-      const fetchB01CachedCandidates = async (userText = "") => {
+      const fetchB01CachedCandidates = async (userText = "", opts = {}) => {
         const window = parseB01PubWindow(userText);
-        const params = new URLSearchParams({ limit: "500" });
+        // 2026-08-27: 기본 경로가 acquisition_shortlist_kdc(n) 이다. 배제 규칙·시리즈 상한·
+        // KDC 권수 쿼터·점수순 선정이 서버에서 끝나 있으므로 브라우저는 결과를 읽기만 한다.
+        // 발행일 구간을 지정한 요청은 쿼터 없이 훑어보는 게 맞으므로 pool 모드로 돌린다.
+        const useWindow = Boolean(window?.startDate || window?.endDate);
+        const params = new URLSearchParams(
+          useWindow
+            ? { mode: "pool", limit: String(opts.limit || 500) }
+            : { mode: "shortlist", n: String(opts.n || B01_DEFAULT_SHORTLIST_N) },
+        );
         if (window?.startDate) params.set("start_date", window.startDate);
         if (window?.endDate) params.set("end_date", window.endDate);
         const res = await fetch(`${ACQUISITION_CANDIDATES_API_URL}?${params.toString()}`);
         if (!res.ok) throw new Error(`후보 풀 조회 실패(HTTP ${res.status})`);
         const data = await res.json();
+        const usageNumber = value => {
+          if (value === null || value === undefined || value === "") return null;
+          const number = Number(value);
+          return Number.isFinite(number) ? number : null;
+        };
         return (data.candidates || []).map(c => ({
           title: c.title || "",
           isbn: normalizeIsbn(c.isbn || ""),
+          isbnAddCode: c.isbn_add_code || "",
+          addCodeAudience: c.add_code_audience || "",
+          addCodeForm: c.add_code_form || "",
+          addCodeSubject: c.add_code_subject || "",
           formDetail: c.form_detail || "",
           pubdate: c.pubdate || "",
-          author: c.author || "",
+          author: cleanB01Author(c.author) || "",
           publisher: c.publisher || "",
           price: c.price || "",
           link: "",
@@ -4843,7 +5316,29 @@ ${extra}
           genre: c.genre || "",
           sources: c.sources || [],
           recommendCount: c.recommend_count || 1,
-          source: c.verified ? "SEOJI확정" : "웹발굴(미검증)",
+          candidateType: c.candidate_type || "",
+          usagePeriod: c.usage_period || "",
+          loanCount: usageNumber(c.loan_count),
+          reservationCount: usageNumber(c.reservation_count),
+          interlibraryReceivedCount: usageNumber(c.interlibrary_received_count),
+          verified: Boolean(c.verified),
+          // 2026-08-27 신규 — 서버가 계산한 5축 점수. 브라우저·모델은 읽기만 하고 만들지 않는다.
+          scoreTotal: c.score_total == null ? null : Number(c.score_total),
+          scorePublisher: c.score_publisher == null ? null : Number(c.score_publisher),
+          scoreAuthor: c.score_author == null ? null : Number(c.score_author),
+          scorePubdate: c.score_pubdate == null ? null : Number(c.score_pubdate),
+          scoreKdc: c.score_kdc == null ? null : Number(c.score_kdc),
+          scorePrice: c.score_price == null ? null : Number(c.score_price),
+          unknownAxes: usageNumber(c.unknown_axes),
+          pubHoldings: usageNumber(c.pub_holdings),
+          pubTurnover: c.pub_turnover == null ? null : Number(c.pub_turnover),
+          autHoldings: usageNumber(c.aut_holdings),
+          autTurnover: c.aut_turnover == null ? null : Number(c.aut_turnover),
+          audienceLabel: c.audience_label || "",
+          audienceGroup: c.audience_group || "",
+          seriesTitle: c.series_title || "",
+          alreadyOwned: Boolean(c.already_owned),
+          source: c.candidate_type ? "지역이용데이터" : (c.verified ? "SEOJI확정" : "웹발굴(미검증)"),
         }));
       };
 
