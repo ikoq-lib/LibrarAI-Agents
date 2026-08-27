@@ -1,7 +1,13 @@
 {
   "scripts": {
     "harvest:acquisition": "node scripts/harvest-acquisition-candidates.mjs",
-    "test:harvest": "node --test tests/harvest-acquisition-candidates.test.mjs"
+    "test:harvest": "node --test tests/harvest-acquisition-candidates.test.mjs",
+    "load:loans": "node scripts/load-loans.mjs",
+    "test:loans": "node --test tests/load-loans.test.mjs",
+    "harvest:seoji": "node scripts/harvest-seoji-catalog.mjs",
+    "test:seoji": "node --test tests/harvest-seoji-catalog.test.mjs",
+    "load:acqdates": "node scripts/load-acquisition-dates.mjs",
+    "test:acqdates": "node --test tests/load-acquisition-dates.test.mjs"
   },
   "devDependencies": {
     "playwright": "^1.60.0"

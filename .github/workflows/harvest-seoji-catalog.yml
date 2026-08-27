@@ -1,0 +1,68 @@
+name: B-01 SEOJI 종이책 신간 일일 수집
+
+# GitHub Actions 의 cron 은 UTC 로만 해석된다(schedule 에 timezone 키는 지원하지 않는다).
+# UTC 21:00 = KST 익일 06:00 — 국립중앙도서관 전일 등록분이 반영된 뒤에 돌린다.
+on:
+  schedule:
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "소급 수집할 등록일 수(비우면 워터마크 기준 증분)"
+        required: false
+        type: string
+      max_pages:
+        description: "1회 실행 페이지 상한(1페이지 = 1,000건)"
+        required: false
+        default: "60"
+        type: string
+
+permissions:
+  contents: read
+
+# 앞선 실행이 아직 돌고 있으면 겹치지 않게 기다린다(워터마크가 꼬이는 것을 막는다).
+concurrency:
+  group: b01-seoji-catalog-harvest
+  cancel-in-progress: false
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 저장소 가져오기
+        uses: actions/checkout@v4
+
+      - name: Node.js 준비
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 수집 파서 테스트
+        run: npm run test:seoji
+
+      - name: SEOJI 신간 수집 및 book_catalog 적재
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.days }}" ]; then ARGS="$ARGS --days ${{ inputs.days }}"; fi
+          if [ -n "${{ inputs.max_pages }}" ]; then ARGS="$ARGS --max-pages ${{ inputs.max_pages }}"; fi
+          node scripts/harvest-seoji-catalog.mjs $ARGS
+        env:
+          SEOJI_API_KEY_NL_DIRECT: ${{ secrets.SEOJI_API_KEY_NL_DIRECT }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SEOJI_LOOKBACK_DAYS: "3"
+          SEOJI_BOOTSTRAP_DAYS: "30"
+          SEOJI_MAX_PAGES: "60"
+
+      - name: 실패 알림용 요약
+        if: failure()
+        run: |
+          echo "### SEOJI 일일 수집 실패" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "워터마크 기반 증분 수집이라 하루 걸러도 다음 실행이 자동으로 따라잡습니다." >> $GITHUB_STEP_SUMMARY
+          echo "며칠 연속 실패하면 페이지 상한(SEOJI_MAX_PAGES)에 걸릴 수 있으니," >> $GITHUB_STEP_SUMMARY
+          echo "workflow_dispatch 로 days 를 지정해 수동 소급 수집하세요." >> $GITHUB_STEP_SUMMARY

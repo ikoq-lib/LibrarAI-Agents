@@ -2,8 +2,11 @@ name: B-01 주간 추천도서 취합
 
 on:
   schedule:
+    # GitHub Actions 의 schedule 은 timezone 키를 지원하지 않는다 - cron 은 항상 UTC 로 해석된다.
+    # 이전에 붙어 있던 timezone: "Asia/Seoul" 은 무시되고 있었다.
+    # 아래 UTC 월요일 03:00 = KST 월요일 12:00 (지금까지 실제로 돌던 시각 그대로).
+    # 새벽에 돌리려면 "0 21 * * 0"(UTC 일요일 21:00 = KST 월요일 06:00)으로 바꾼다.
     - cron: "0 3 * * 1"
-      timezone: "Asia/Seoul"
   workflow_dispatch:
 
 permissions:
