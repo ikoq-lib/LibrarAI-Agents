@@ -5,6 +5,13 @@ create table if not exists public.acquisition_candidates (
   id            bigint generated always as identity primary key,
   dedup_key     text not null unique,          -- 중복 병합 키: ISBN 있으면 ISBN, 없으면 정규화(제목|저자)
   isbn          text,                           -- ISBN13 (SEOJI 검증 후 채움, 없을 수 있음)
+  isbn_add_code varchar(5),                     -- SEOJI EA_ADD_CODE 원본 5자리
+  add_code_audience varchar(1) generated always as
+    (substring(isbn_add_code from 1 for 1)) stored, -- 1자리: 독자대상기호
+  add_code_form varchar(1) generated always as
+    (substring(isbn_add_code from 2 for 1)) stored, -- 2자리: 발행형태기호
+  add_code_subject varchar(3) generated always as
+    (substring(isbn_add_code from 3 for 3)) stored, -- 3~5자리: 내용분류기호(임시 분류용)
   title         text not null,
   author        text,
   publisher     text,
@@ -19,8 +26,37 @@ create table if not exists public.acquisition_candidates (
   status        text not null default 'candidate', -- candidate | selected | purchased | rejected
   first_seen    timestamptz not null default now(),
   last_seen     timestamptz not null default now(),
-  metadata      jsonb not null default '{}'::jsonb
+  metadata      jsonb not null default '{}'::jsonb -- 공개수집 메타데이터 또는 지역 이용 집계 근거(candidate_type/usage_period/건수); 이용자 식별정보 저장 금지
 );
+
+-- 이미 생성된 운영 테이블에도 안전하게 열을 추가한다. 분해 열은 원본에서 자동 생성되어
+-- 원본 부가기호와 서로 다른 값으로 저장될 수 없다.
+alter table public.acquisition_candidates
+  add column if not exists isbn_add_code varchar(5);
+alter table public.acquisition_candidates
+  add column if not exists add_code_audience varchar(1)
+    generated always as (substring(isbn_add_code from 1 for 1)) stored;
+alter table public.acquisition_candidates
+  add column if not exists add_code_form varchar(1)
+    generated always as (substring(isbn_add_code from 2 for 1)) stored;
+alter table public.acquisition_candidates
+  add column if not exists add_code_subject varchar(3)
+    generated always as (substring(isbn_add_code from 3 for 3)) stored;
+
+do $$
+begin
+  if not exists (
+    select 1
+      from pg_constraint
+     where conname = 'acquisition_candidates_add_code_format'
+       and conrelid = 'public.acquisition_candidates'::regclass
+  ) then
+    alter table public.acquisition_candidates
+      add constraint acquisition_candidates_add_code_format
+      check (isbn_add_code is null or isbn_add_code ~ '^[0-9]{5}$');
+  end if;
+end
+$$;
 
 create index if not exists acq_cand_status_idx  on public.acquisition_candidates (status);
 create index if not exists acq_cand_pubdate_idx on public.acquisition_candidates (pubdate);

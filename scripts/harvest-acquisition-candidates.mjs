@@ -143,6 +143,11 @@ export function normalizeIsbn(value = "") {
   return String(value).replace(/[^0-9Xx]/g, "").toUpperCase();
 }
 
+export function normalizeIsbnAddCode(value = "") {
+  const normalized = String(value).trim().replace(/[\s-]/g, "");
+  return /^\d{5}$/.test(normalized) ? normalized : null;
+}
+
 function normalizeDate(value = "") {
   const digits = String(value).replace(/[^0-9]/g, "");
   return digits.length >= 8 ? digits.slice(0, 8) : digits;
@@ -518,9 +523,11 @@ async function seojiLookup(candidate) {
   const price = priceRaw ? Number(priceRaw) : null;
   if (price && price >= 50_000) return null;
   const isbn = normalizeIsbn(doc.EA_ISBN || candidate.isbn);
+  const isbnAddCode = normalizeIsbnAddCode(doc.EA_ADD_CODE);
   return {
     ...candidate,
     isbn: /^\d{13}$/.test(isbn) ? isbn : candidate.isbn,
+    isbnAddCode,
     title: cleanText(doc.TITLE || candidate.title),
     author: cleanText(doc.AUTHOR || candidate.author),
     publisher: cleanText(doc.PUBLISHER || candidate.publisher),
@@ -641,6 +648,13 @@ async function upsertCandidates(candidates) {
         id bigint generated always as identity primary key,
         dedup_key text not null unique,
         isbn text,
+        isbn_add_code varchar(5),
+        add_code_audience varchar(1)
+          generated always as (substring(isbn_add_code from 1 for 1)) stored,
+        add_code_form varchar(1)
+          generated always as (substring(isbn_add_code from 2 for 1)) stored,
+        add_code_subject varchar(3)
+          generated always as (substring(isbn_add_code from 3 for 3)) stored,
         title text not null,
         author text,
         publisher text,
@@ -657,6 +671,31 @@ async function upsertCandidates(candidates) {
         last_seen timestamptz not null default now(),
         metadata jsonb not null default '{}'::jsonb
       );
+      alter table public.acquisition_candidates
+        add column if not exists isbn_add_code varchar(5);
+      alter table public.acquisition_candidates
+        add column if not exists add_code_audience varchar(1)
+          generated always as (substring(isbn_add_code from 1 for 1)) stored;
+      alter table public.acquisition_candidates
+        add column if not exists add_code_form varchar(1)
+          generated always as (substring(isbn_add_code from 2 for 1)) stored;
+      alter table public.acquisition_candidates
+        add column if not exists add_code_subject varchar(3)
+          generated always as (substring(isbn_add_code from 3 for 3)) stored;
+      do $$
+      begin
+        if not exists (
+          select 1
+            from pg_constraint
+           where conname = 'acquisition_candidates_add_code_format'
+             and conrelid = 'public.acquisition_candidates'::regclass
+        ) then
+          alter table public.acquisition_candidates
+            add constraint acquisition_candidates_add_code_format
+            check (isbn_add_code is null or isbn_add_code ~ '^[0-9]{5}$');
+        end if;
+      end
+      $$;
       create index if not exists acq_cand_status_idx on public.acquisition_candidates (status);
       create index if not exists acq_cand_pubdate_idx on public.acquisition_candidates (pubdate);
       create index if not exists acq_cand_verified_idx on public.acquisition_candidates (verified);
@@ -670,13 +709,15 @@ async function upsertCandidates(candidates) {
     for (const candidate of candidates) {
       await client.query(
         `insert into public.acquisition_candidates
-           (dedup_key, isbn, title, author, publisher, pubdate, price, form_detail,
-            genre, sources, recommend_count, popnote, verified, status, last_seen, metadata)
+           (dedup_key, isbn, isbn_add_code, title, author, publisher, pubdate, price,
+            form_detail, genre, sources, recommend_count, popnote, verified, status,
+            last_seen, metadata)
          values
-           ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::text[], $11, $12, $13,
-            'candidate', now(), $14::jsonb)
+           ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::text[], $12, $13, $14,
+            'candidate', now(), $15::jsonb)
          on conflict (dedup_key) do update set
            isbn = coalesce(excluded.isbn, acquisition_candidates.isbn),
+           isbn_add_code = coalesce(excluded.isbn_add_code, acquisition_candidates.isbn_add_code),
            title = excluded.title,
            author = coalesce(excluded.author, acquisition_candidates.author),
            publisher = coalesce(excluded.publisher, acquisition_candidates.publisher),
@@ -703,6 +744,7 @@ async function upsertCandidates(candidates) {
         [
           candidate.dedup_key,
           candidate.isbn || null,
+          candidate.isbnAddCode || null,
           candidate.title,
           candidate.author || null,
           candidate.publisher || null,

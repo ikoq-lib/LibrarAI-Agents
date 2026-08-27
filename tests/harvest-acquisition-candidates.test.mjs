@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   SOURCES,
   mergeCandidates,
+  normalizeIsbnAddCode,
   parseAiDiscovery,
   parseKpipaPdfText,
   parseNlcyHtml,
@@ -11,6 +12,13 @@ import {
   parseYes24Html,
   selectFinalCandidates,
 } from "../scripts/harvest-acquisition-candidates.mjs";
+
+test("SEOJI ISBN 부가기호는 유효한 5자리만 보존한다", () => {
+  assert.equal(normalizeIsbnAddCode("0 3 810"), "03810");
+  assert.equal(normalizeIsbnAddCode("0381"), null);
+  assert.equal(normalizeIsbnAddCode("03810A"), null);
+  assert.equal(normalizeIsbnAddCode(""), null);
+});
 
 test("YES24 신상품 HTML에서 제목·저자·출판사를 읽는다", () => {
   const html = `
