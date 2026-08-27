@@ -29,28 +29,55 @@ create extension if not exists pgcrypto;   -- digest() : 회원번호 해시
 
 -- ============================================================================
 -- 1. 정규화 함수
---    출판사 정확일치는 26.5%에 그치지만 정규화 후 43.1%까지 오른다.
+--    후보(SEOJI)와 소장(books)의 출판사·저자명을 붙이는 조인 키를 만든다.
+--    출판사는 원문 정확일치 26.5% -> 정규화 후 56.1%(후보 9,873권 기준, 2026-08-27 재측정).
 --    저자는 books가 '홍길동 지음' 형태로 저장돼 있어 역할어 제거가 필수다(정확일치 8.2%).
 --    인덱스와 생성열에서 쓰려면 반드시 immutable 이어야 한다.
 -- ============================================================================
 
+-- 법인격·수식어 토큰 제거. norm_publisher 가 두 번 호출한다(아래 설명 참고).
+create or replace function public.strip_corp_tokens(p text)
+returns text
+language sql
+immutable
+as $$
+  select regexp_replace(p,
+    '\(주\)|\(사\)|주식회사|사단법인|재단법인|도서출판|출판사|출판그룹|퍼블리싱|publishing',
+    '', 'g');
+$$;
+
+-- 2026-08-27 재작성. 이전 판은 토큰만 지우고 껍데기 괄호를 남겨서
+-- '(주식회사)창비' -> '()창비' 가 되고 소장측 '창비' 와 갈라졌다.
+-- 창비 1,205권 · 그레이트북스 309권 · 다산북스 206권 등 실제 이력이 통째로 버려지고 있었다.
+-- 실측(후보 9,873권 기준) 소장 이력 매칭률 46.2% -> 56.1%.
 create or replace function public.norm_publisher(p text)
 returns text
 language sql
 immutable
 as $$
   select nullif(
+    -- 4) 꼬리 괄호구 제거. 로마자 표기나 부브랜드다.
+    --    '바른북스(barunbookscoltd)' -> '바른북스', '이지북(ezbook)' -> '이지북'
     regexp_replace(
+      -- 3) 토큰이 빠지고 껍데기만 남은 괄호 제거. '()창비' -> '창비'
       regexp_replace(
-        lower(coalesce(p, '')),
-        '\(주\)|\(사\)|주식회사|사단법인|재단법인|도서출판|출판사|출판그룹|퍼블리싱|publishing',
-        '', 'g'),
-      '[[:space:]·\-_.,''"]', '', 'g'),
+        -- 2) 토큰 제거를 두 번 돌린다. '(주도서출판)길벗' 은 1회차에 '(주)길벗' 이 되고
+        --    2회차에야 '(주)' 가 지워진다. 길벗 179권 · 서울문화사 179권이 여기서 붙는다.
+        public.strip_corp_tokens(
+          public.strip_corp_tokens(
+            -- 1) 공백·구두점을 먼저 지운다. '(주 도서출판)' 처럼 토큰이 공백으로
+            --    끊긴 표기를 2)에서 잡으려면 이 순서여야 한다.
+            regexp_replace(lower(coalesce(p, '')),
+                           '[[:space:]·\-_.,''"]', '', 'g'))),
+        '\(\s*\)', '', 'g'),
+      '\([^()]*\)$', '', ''),
     '');
 $$;
 
 comment on function public.norm_publisher(text) is
-  '출판사명 정규화: 법인격·수식어·공백·구두점 제거 후 소문자화. (주)창비 = 창비 = 도서출판 창비';
+  '출판사명 정규화: 공백·구두점 제거 -> 법인격 토큰 2회 제거 -> 빈 괄호 제거 -> 꼬리 괄호구 제거. '
+  '(주)창비 = (주식회사)창비 = 도서출판 창비 = 창비. '
+  '이름이 아예 다른 이형(북이십일 = 21세기북스)은 여기서 못 잡는다 - db/publisher_aliases.sql 참고.';
 
 
 create or replace function public.norm_author(a text)
@@ -367,9 +394,10 @@ comment on column public.books.acquired_date_precision is
 
 
 -- ============================================================================
--- 6. publisher_aliases - 표기 흔들림 수동 보정
---    norm_publisher() 로 흡수되지 않는 이형(미래엔아이세움 = 아이세움 = Mirae N 아이세움)을 묶는다.
---    실측에서 이 3개가 각각 회전율 16.3 / 9.4 / 10.5 로 흩어져 있었다.
+-- 6. publisher_aliases - 이름 자체가 다른 이형 수동 보정
+--    norm_publisher() 는 표기 흔들림까지만 흡수한다((주식회사)창비 = 창비).
+--    '북이십일 = 21세기북스 = 아울북' 처럼 문자열이 아예 다른 건 사람이 묶어야 한다.
+--    행 데이터와 등재 근거·점검 절차는 db/publisher_aliases.sql 에 있다.
 -- ============================================================================
 
 create table if not exists public.publisher_aliases (
@@ -378,11 +406,8 @@ create table if not exists public.publisher_aliases (
   note          text
 );
 
-insert into public.publisher_aliases (alias_key, canonical_key, note) values
-  (public.norm_publisher('미래엔아이세움'),  public.norm_publisher('아이세움'), '동일 임프린트'),
-  (public.norm_publisher('Mirae N 아이세움'), public.norm_publisher('아이세움'), '동일 임프린트'),
-  (public.norm_publisher('미래엔'),          public.norm_publisher('아이세움'), '동일 그룹 - 분리하려면 이 행 삭제')
-on conflict (alias_key) do nothing;
+-- 실제 별칭 행은 db/publisher_aliases.sql 이 넣는다.
+-- 이 파일은 스키마만 만들고 데이터는 갖지 않는다(별칭은 계속 늘어나므로 파일을 나눴다).
 
 create or replace function public.canon_publisher(p text)
 returns text
