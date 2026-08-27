@@ -10,6 +10,27 @@ LibrarAI is a Korean public library AI management system consisting of three spe
 - **수서 에이전트 (Acquisition Agent)** — manages book purchasing workflow using the Aladin Open API; handles 정기도서수서 (regular acquisitions) and 희망도서수서 (patron requests), including duplicate checking (ISBN, title, author)
 - **이용자 응대 에이전트 (User Service Agent)** — kiosk-style patron-facing agent with voice + touch input; handles location guidance, loan/return/renewal, program info, and material recommendations
 
+## Canonical Agent Definitions (Claude Code + Codex)
+
+The files under `.claude/agents/` are the **single source of truth** for every LibrarAI agent used by both Claude Code and Codex. The files under `.codex/agents/` are compatibility/registration metadata only and must never be treated as the authoritative behavior specification.
+
+- Before performing any LibrarAI domain task, Codex must identify and read the relevant `.claude/agents/*.md` file completely, then follow that definition for role, workflow, routing, HITL, output, and escalation behavior.
+- For an orchestrated task, read every definition needed for the active chain: `chief-coordinator.md`, the selected `dm-*.md` file(s), and the delegated leaf-agent file(s). Do not rely on an older summary in `.codex/agents/`.
+- If a selected agent definition refers to `.claude/agent-memory/<agent>/`, read only the memory files relevant to the current task and treat them as supporting context rather than higher-priority rules.
+- If `.codex/agents/`, `AGENTS.md`, an app prompt, or another compatibility file conflicts with `.claude/agents/`, the `.claude/agents/` definition wins unless a system, developer, or current user instruction has higher priority.
+- When an agent definition changes, update `.claude/agents/` first. Do not maintain a second full copy of the same instructions in `.codex/agents/`; compatibility entries should point back to the canonical Claude definition.
+- Never overwrite `.claude/agents/` or `.claude/agent-memory/` from `.codex/agents/`.
+
+### Authentication and simulation data security baseline
+
+For participant accounts, multi-user simulations, or any API that reads or writes user-scoped data:
+
+- Validate the Supabase JWT on the server and derive the authenticated identity from the verified token (`auth.uid()` semantics).
+- Never trust a client-supplied `user_id`, owner id, role, or authorization claim.
+- Verify that the authenticated user owns the requested `run_id` before reading, generating, updating, or deleting simulation data.
+- Scope every operation to the verified user and owned run; enforce the same boundary with Supabase Row Level Security where applicable.
+- Keep Supabase secret/service-role keys, database passwords, and third-party access tokens server-side only. Never expose them in browser code, chat output, logs, or generated artifacts.
+
 ## Tech Stack
 
 - **Frontend**: React (JSX), deployed on Vercel

@@ -1,25 +1,6 @@
 ---
 name: d-02-event-planner
-description: "Use this agent when a librarian or library staff member wants to
-  plan monthly themed events and book curation programs for a public library.
-  This agent should be used at the beginning of each month (or in preparation
-  for the upcoming month) to generate thematic event
-  plans.\\n\\n<example>\\nContext: A library staff member wants to plan events
-  for the upcoming month.\\nuser: '5월 행사를 기획해주세요'\\nassistant: '5월 행사 기획을 위해
-  monthly-event-planner 에이전트를 실행하겠습니다.'\\n<commentary>\\nThe user wants to plan
-  May events. Use the Agent tool to launch the monthly-event-planner agent to
-  generate theme candidates and event
-  plans.\\n</commentary>\\n</example>\\n\\n<example>\\nContext: A librarian asks
-  for help with monthly programming.\\nuser: '다음 달 도서관 행사 주제 좀 잡아줘'\\nassistant:
-  '네, monthly-event-planner 에이전트를 통해 다음 달 행사 주제 후보군을
-  만들어드리겠습니다.'\\n<commentary>\\nSince the user is requesting monthly event theme
-  planning, use the Agent tool to launch the monthly-event-planner
-  agent.\\n</commentary>\\n</example>\\n\\n<example>\\nContext: Library staff is
-  preparing an annual programming calendar.\\nuser: '7월 주제 선정하고 행사 전체 기획안
-  만들어줘'\\nassistant: '7월 행사 전체 기획을 위해 monthly-event-planner 에이전트를
-  실행하겠습니다.'\\n<commentary>\\nThe user wants a full event plan for July. Use the
-  Agent tool to launch the monthly-event-planner agent to propose themes and
-  then develop a complete 6-event plan.\\n</commentary>\\n</example>"
+description: "Plans monthly themed 독서진흥행사 and 북큐레이션 for the library, typically at the start of a month or when preparing the next one. Step 1 proposes theme candidates balancing 시의성, reading linkage, and target audience; step 2 develops the confirmed theme into a fixed set of 6 event plans covering 대상, 일정, 장소, 예산, 준비물, and curated books. Supply purchase candidates are surfaced as links via the 네이버 쇼핑 MCP (chat stage only). Sends stated amounts to A-03 and follows A-03 alternate-line procedure when the balance is short. Routes promotional materials to F-01 and instructor sourcing to D-03."
 model: sonnet
 color: blue
 memory: project

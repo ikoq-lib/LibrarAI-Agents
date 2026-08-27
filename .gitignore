@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Local Codex configuration may contain MCP access tokens
+.codex/config.toml
+
 # API 키 텍스트 파일
 API/*.txt
 References/supabase DB pw.txt
