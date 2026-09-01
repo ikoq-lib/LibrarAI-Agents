@@ -19,7 +19,8 @@ LibrarAI is a Korean public library AI management system. The three agents below
   - 선택 가능한 모델은 `LibrarAI.html`의 `CHAT_MODELS` 배열(6종)에 정의하고, 사이드바 하단 드롭다운에서 고른다. 선택값은 `localStorage["librarai_chat_model"]`에 유지되며, 저장값이 목록에 없으면 기본값으로 폴백한다.
   - **`CHAT_MODELS`에 추가하는 모델은 반드시 도구 호출(tools)을 지원해야 한다** — chief-coordinator의 리프 위임(ROUTE)이 도구 호출에 의존한다. 추가 전 `https://openrouter.ai/api/v1/models`(인증 불필요)에서 ID·`supported_parameters`·가격을 확인할 것. 모델 ID를 추측해서 넣지 말 것.
   - **실제 배포 시점에는 프롬프트 캐싱 비용 이점을 위해 Anthropic/OpenAI 다이렉트 API로 전환 예정** (아래 "Pending Issues" 참고)
-- **External APIs**: Aladin Open API 차단으로 2026-07-09부터 SEOJI(국립중앙도서관 서지정보유통지원시스템)+네이버 책 검색 API로 대체 (`.env.local` 참고). **2026-07-15부터 Claude Code 에이전트(B-01·B-02)는 네이버 책 검색 API를 `mcp__naver-shopping__search-book` MCP 도구로 호출** (`~/.claude/mcp-servers/naver-api-mcp`, D-02가 쓰는 `search-shopping`과 동일 서버). 웹앱(`api/`)에서의 실제 호출 경로는 별도 확인 필요.
+- **External APIs**: **SEOJI(국립중앙도서관 서지정보유통지원시스템)가 유일한 서지 소스다** (`api/seoji.js` 프록시, `.env.local` 참고). 알라딘 Open API는 2026-07-09 차단, 네이버 책 검색 API는 2026-09-01 서비스 종료(`/v1/search/book.json` → `404 SE05`)로 둘 다 사용 불가 — B-01·B-02·B-04-W에서 네이버 책 검색을 쓰는 코드나 절차를 새로 만들지 말 것. 책소개·목차 등 SEOJI에 없는 정보는 WebSearch로 보완한다.
+  - **주의:** 네이버 쇼핑 검색(`/v1/search/shop.json`, D-02 준비물 구매 링크)도 같은 시점에 종료됐다. `search-blog`·`search-encyclopedia`·데이터랩은 정상.
 - **File processing**: xlsx.js (loaded dynamically from CDN) for KDC statistics Excel files
 
 ## Architecture Pattern

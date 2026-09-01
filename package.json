@@ -7,7 +7,8 @@
     "harvest:seoji": "node scripts/harvest-seoji-catalog.mjs",
     "test:seoji": "node --test tests/harvest-seoji-catalog.test.mjs",
     "load:acqdates": "node scripts/load-acquisition-dates.mjs",
-    "test:acqdates": "node --test tests/load-acquisition-dates.test.mjs"
+    "test:acqdates": "node --test tests/load-acquisition-dates.test.mjs",
+    "extract:kdc6": "node scripts/extract-kdc6-text.mjs"
   },
   "devDependencies": {
     "playwright": "^1.60.0"

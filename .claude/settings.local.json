@@ -194,7 +194,6 @@
       "Bash(NAVER_CLIENT_ID=N75N0z7VRcaHtChIGMpT NAVER_CLIENT_SECRET=awJ9_onbzt timeout 3 node dist/index.js)",
       "Bash(echo \"EXIT:$?\")",
       "mcp__naver-shopping__search-shopping",
-      "mcp__naver-shopping__search-book",
       "Bash(echo \"exit:$?\")",
       "Bash(taskkill //F //IM Hwp.exe)",
       "Bash(cp hwpx_base_template.js hwpx_base_template.js.bak)",

@@ -131,10 +131,8 @@
       ? "https://librar-ai-agents.vercel.app/api/gemini"
       : "/api/gemini";
 
-    // B-01 전용 — 네이버 책 검색 API 프록시(SEOJI 1차 수집 후보의 정가·표지·링크 2차 보완용)
-    const NAVER_BOOKS_API_URL = window.location.protocol === "file:"
-      ? "https://librar-ai-agents.vercel.app/api/naver-books"
-      : "/api/naver-books";
+    // (2026-09-01 제거) 네이버 책 검색 API 프록시 — 네이버가 /v1/search/book.json 서비스를 종료해
+    // 모든 호출이 404 SE05를 반환한다. B-01의 정가 2차 보완 경로를 삭제하고 SEOJI 값만 사용한다.
 
     // D-02 전용 — 네이버 쇼핑 검색 API 프록시(행사 준비물·재료 구매 링크 결정론적 조회)
     const NAVER_SHOPPING_API_URL = window.location.protocol === "file:"
@@ -1053,7 +1051,8 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
   - **ISBN 부가기호 해석**: SEOJI가 EA_ADD_CODE를 제공한 후보에는 "부가기호: 03100"처럼 원본 5자리가 붙습니다(자릿수로 읽으십시오). 첫째 자리(독자대상기호) 7은 어린이, 4는 청소년, 그 외는 일반으로 봅니다(블록의 "대상" 필드가 이미 정리해 줍니다). 유아와 어린이는 부가기호로 구분되지 않으므로 나누어 보고하지 마십시오. 셋째~다섯째 자리 내용분류(예: 810)는 출판사가 부여한 "부가기호 기반 임시 분류"이지 확정 KDC가 아닙니다. 값이 없으면 추정하지 마세요.
   - **후보의 두 상태**: 각 후보는 "SEOJI 검증확정"(SEOJI가 실존·서지 확인) 또는 "⚠미검증(웹발굴)"(SEOJI에 없거나 SEOJI 무응답이라 웹 발굴 데이터 그대로) 중 하나입니다. **미검증도 실재가 웹에서 확인된 정상 후보이므로 목록·선정에 포함하되**, 응답에서 그 항목이 미검증임을 밝히고 "발주 전 사서 재확인 필요"를 안내하세요. 미검증이라는 이유만으로 후보에서 빼지 마십시오. 선정 목록의 비고에 "미검증"을 직접 적을 필요는 없습니다 — 시스템이 후보 풀의 검증 상태를 보고 자동으로 표기합니다.
   - **절대 규칙(허구 도서 생성 금지)**: 후보 목록·선정 목록에 올리는 모든 도서(제목·저자·출판사·ISBN 등)는 반드시 첨부된 "[B-01 추천도서 후보 풀]" 블록에 실재하는 항목이어야 합니다. 이 블록에 없는 도서를 기억이나 추정으로 지어내 목록에 포함하는 것은 절대 금지입니다(미검증 항목을 채우려 지어내는 것도 금지 — 블록에 있는 것만 사용).
-  - 첨부된 블록이 "(후보 없음)"이거나 유효 후보가 부족한 경우, 절대로 도서를 임의로 만들어 채우지 말고 그 사실을 있는 그대로 보고한 뒤 사서에게 재수집 또는 사서가 직접 후보 추가를 요청하세요. 목표 예산·건수를 채우지 못하더라도 실재하지 않는 항목으로 채우는 것보다 미달 상태를 보고하는 것이 항상 우선입니다.
+  - 첨부된 블록이 "(후보 없음)"이거나 유효 후보가 부족한 경우, 절대로 도서를 임의로 만들어 채우지 말고 그 사실을 있는 그대로 보고한 뒤 "후보 풀 재수집"을 제안하세요. 목표 예산·건수를 채우지 못하더라도 실재하지 않는 항목으로 채우는 것보다 미달 상태를 보고하는 것이 항상 우선입니다.
+  - **사서에게 수서 후보나 선정 목록을 직접 달라고 요구하지 마십시오.** 후보 풀은 Supabase `book_catalog`(SEOJI 종이책 신간 전량)에서 시스템이 매 요청마다 자동으로 붙여 줍니다. 목록이 보이지 않으면 사서가 준비를 안 한 것이 아니라 조회가 실패한 것이므로, "엑셀 목록·ISBN 목록을 붙여넣어 주세요" 같은 요구 대신 재수집을 안내하세요.
 - FN-01A 지역 이용 데이터 후보 보강: 사서가 대출·예약·상호대차 수령 데이터를 제공하면 도서별 집계값만 분석해 한 배치당 최대 5종을 후보 풀에 보강합니다. 대출·예약 상위 도서는 이미 소장한 additional_copy 후보, 우리 관에 없어 다른 도서관에서 수령한 상호대차 도서는 new_title 후보입니다. 이용자 식별정보는 사용·저장하지 않습니다. 서로 단위가 다른 원시 건수를 직접 더하지 말고 배치 내 순위·백분위를 사용하며, 여러 지표에 동시에 나타난 도서는 근거를 모두 보존합니다. 이 단계는 후보 진입일 뿐 자동 구입 확정이 아닙니다.
 - FN-02 복본·균형·희망도서 교차 확인: **1차 걸러내기는 이미 끝나 있습니다.** ISBN 완전일치 소장분은 서버가 걸러내고, 장서 균형도 KDC결핍 축으로 점수에 이미 반영돼 있으므로 후보 한 건씩 B-05에 결핍지수를 묻지 마십시오.
   - 서명+저자 유사도 판정은 서버가 못 하므로 **B-03 복본 판정은 반드시 거칩니다**(needs_review 건은 사서 확인 전까지 보류). 신간에서는 복본이 거의 안 나오지만(2026-08-27 실측: 카탈로그 9,873종 중 ISBN 교집합 0건) 그렇다고 B-03 단계를 생략하지 않습니다.
@@ -1125,7 +1124,7 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 
 ## 담당 업무
 - FN-01 신청 접수·목록화: 신청일·신청자·서명·저자·ISBN·사유 기록
-- FN-02 서지 정보 자동 보완: 네이버 책 검색 API로 ISBN·서명 대조. 매칭 실패 시 사서 수동 확인 요청
+- FN-02 서지 정보 자동 보완: SEOJI(국립중앙도서관)로 ISBN·서명 대조. 서명 조회 결과가 2건 이상이면 임의로 고르지 말고 상위 3건을 제시해 사서가 선택하게 하고, 0건이면 지어내지 말고 사서 수동 확인 요청. (네이버 책 검색 API는 2026-09-01 종료되어 사용 불가 — 언급하지 말 것)
 - FN-03 반려 기준 1차 판정 (R-01~R-10, 순서대로 적용해 첫 해당 사유로 반려):
   R-01 소장/구입중(B-03 복본 판정 위임) · R-02 자격증·수험서 · R-03 절판 · R-04 외국서적·E-book·DVD·잡지·부적합 제본형태(SEOJI 포맷 조회로 자동 판정) · R-05 출판 5년 초과 · R-06 만화·무협·판타지·로맨스(학습·우량만화 제외) · R-07 문제풀이집·색칠공부 · R-08 정가 5만원 이상 · R-09 전집·시리즈 월 3권 초과 · R-10 기타(사서 수동 판단)
 - FN-04 신청 한도 검증: 1인 월 3권, 시리즈물 월 3권, 동일 도서 중복 신청 합산
@@ -4001,7 +4000,7 @@ ${FILE_DOWNLOAD_RULE}
       return (fn) => new Promise((resolve, reject) => { queue.push({ fn, resolve, reject }); pump(); });
     };
 
-    // 외부 서지 API(네이버 책검색/쇼핑·SEOJI) 전용 동시성 제한 — 병렬 리프가 후보마다 검색을 쏠 때
+    // 외부 서지 API(SEOJI·네이버 쇼핑) 전용 동시성 제한 — 병렬 리프가 후보마다 검색을 쏠 때
     // 각 API 자체 rate limit(429)을 예방한다. LLM용 chiefLimit과 분리(서로 다른 서비스·한도).
     const bibApiLimit = makeLimiter(4);
 
@@ -4124,6 +4123,9 @@ ${FILE_DOWNLOAD_RULE}
       const chiefInputRef = useRef(null);  // 총괄 채팅 입력창 — 자동 높이 조절
       const textareaRef = useRef(null);
       const stepInputRefs = useRef({}); // "planId:stepIndex" 등 draftKey → 계획 화면 답변용 textarea DOM 노드
+      // B-01 후보 풀 캐시 — 조회는 대화당 1회, 첨부는 매 턴. 블록은 화면·localStorage에 남기지 않고
+      // API 호출용 메시지에만 붙인다(채팅 로그를 깨끗하게 유지하고 저장 용량을 아낀다).
+      const b01PoolBlockRef = useRef("");
 
       // 계획 화면의 답변/추가 지시 textarea들은 개수가 동적이라 useEffect 대신
       // 이벤트에서 바로 높이를 재는 방식으로 최대 120px까지 자동으로 늘린다.
@@ -4557,45 +4559,18 @@ ${FILE_DOWNLOAD_RULE}
             price, link: "",
           });
         });
-        return await enrichB01PriceViaNaver(candidates.slice(0, limit));
+        return candidates.slice(0, limit);
       };
 
-      // SEOJI는 CIP 등록 시점의 예정 정가(PRE_PRICE)를 제공하지만, 등록 직후라 아직 정가가 확정되지 않은
-      // 경우가 흔하다. 정가가 비어있는 후보만 네이버 책 검색(2차)으로 제목 조회해 ISBN이 정확히 일치하는
-      // 결과가 있으면 정가·표지·링크를 보완한다. 신간이라 네이버 쇼핑에 아직 등록 안 된 경우도 많아 실패해도
-      // "확인필요"로 남기고 전체 수집을 막지 않는다(전체 후보를 다 재조회하지 않아 호출량도 제어됨).
-      const enrichB01PriceViaNaver = async (candidates) => {
-        const suspects = candidates.filter(c => !c.price);
-        if (!suspects.length) return candidates;
-        const enriched = await Promise.all(suspects.map(async (c) => {
-          try {
-            const res = await bibApiLimit(() => fetch(NAVER_BOOKS_API_URL, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ query: c.title, display: 5, sort: "sim" }),
-            }));
-            const data = await res.json();
-            const match = (data.items || []).find(item => (item.isbn || "").trim() === c.isbn);
-            if (match) {
-              return {
-                ...c,
-                price: match.discount && match.discount !== "0" ? match.discount : c.price,
-                link: match.link || "",
-                naverChecked: true,
-              };
-            }
-            return { ...c, naverChecked: true };
-          } catch (e) {
-            return c; // 네이버 조회 실패 시 기존 상태 그대로 유지
-          }
-        }));
-        const byIsbn = new Map(enriched.map(c => [c.isbn, c]));
-        return candidates.map(c => byIsbn.get(c.isbn) || c);
-      };
+      // (2026-09-01 제거) enrichB01PriceViaNaver — SEOJI는 CIP 등록 시점의 예정 정가(PRE_PRICE)를 제공하지만
+      // 등록 직후라 정가가 비어 있는 경우가 흔해, 그 공백만 네이버 책 검색으로 2차 보완하던 함수였다.
+      // 네이버가 책 검색 API를 종료(404 SE05)해 보완 경로가 사라졌으므로 삭제한다.
+      // → 정가가 없는 후보는 price를 빈 값으로 둔 채 후보 풀에 남고, B-01이 "정가 확인필요"로 사서에게 넘긴다.
 
       // 확정 후보를 B-01에게 보낼 텍스트 블록으로 직렬화.
-      // ⚠ 헤더 프리픽스 "[B-01 추천도서 후보 풀"과 불릿 "- ... | ISBN: xxx | ..." 형식은 반드시 유지한다 —
-      // parseB01PoolLine 되파싱과 extractB01Pool 블록 정규식, 단일탭 재수집 체크(includes)가 이 형식에 의존한다.
+      // ⚠ 헤더 프리픽스("[B-01 수서 선정 목록" 또는 "[B-01 추천도서 후보 풀")와 불릿 "- ... | ISBN: xxx | ..."
+      // 형식은 반드시 유지한다 — parseB01PoolLine 되파싱과 extractB01Pool 블록 정규식이 이 형식에 의존한다.
+      // 머리말을 새로 추가할 때는 extractB01Pool의 blockRe에도 반드시 같이 추가한다.
       const formatB01SeojiBlock = (candidates) => {
         if (!candidates.length) return "\n\n[B-01 추천도서 후보 풀]\n(후보 없음 — 주간 후보 풀 조회와 실시간 예비 발굴이 모두 실패했거나 조건에 맞는 후보가 없습니다. 지어내지 말고 사실대로 보고하고 사서 후보 추가를 요청하세요.)";
         const lines = candidates.map(c => {
@@ -4724,7 +4699,11 @@ ${FILE_DOWNLOAD_RULE}
         // 머리말은 여러 줄일 수 있으므로(신호 커버리지 등) 개행이 아니라 닫는 대괄호까지 먹는다.
         // 과거 `[^\n]*`로 한 줄만 가정했다가 머리말이 두 줄이 되는 순간 후보 풀 전체가
         // 파싱되지 않아 선정 목록이 통째로 비는 회귀가 있었다(2026-08-03).
-        const blockRe = /\[B-01 추천도서 후보 풀[^\]]*\]\n((?:- .*(?:\n|$))*)/g;
+        // 머리말은 두 종류다 — 기본 경로(shortlist)는 "[B-01 수서 선정 목록 …]", 예비 경로는
+        // "[B-01 추천도서 후보 풀 …]". 2026-08-27에 기본 경로 머리말을 새로 만들면서 이 정규식을 함께
+        // 고치지 않아 기본 경로에서는 후보 풀이 통째로 파싱되지 않았고, expandB01Selection이 모든 행을
+        // "풀에 없음"으로 떨궈 선정 목록이 비었다(2026-09-02 수정).
+        const blockRe = /\[B-01 (?:추천도서 후보 풀|수서 선정 목록)[^\]]*\]\n((?:- .*(?:\n|$))*)/g;
         msgs.forEach(m => {
           if (typeof m.content !== "string") return;
           let blockMatch;
@@ -5205,7 +5184,7 @@ ${FILE_DOWNLOAD_RULE}
           // (후보 풀 블록이 붙은 턴도 포함되지만, 금액 표기는 요청문 쪽에만 나타난다).
           const requestText = msgs
             .filter(m => m.role === "user" && typeof m.content === "string")
-            .map(m => m.content.split("\n\n[B-01 추천도서 후보 풀")[0])
+            .map(m => m.content.split(/\n\n\[B-01 (?:추천도서 후보 풀|수서 선정 목록)/)[0])
             .join("\n");
           // ① 신 형식(===선정시작===)을 후보 풀과 조인해 9열 Excel 표로 확장하고 예산·집중도를 검산한다.
           reply = expandB01Selection(reply, pool, requestText);
@@ -5474,7 +5453,6 @@ ${FILE_DOWNLOAD_RULE}
         if (!discovered.length) return formatB01SeojiBlock([]); // 그라운딩 전면 실패 → 후보 없음(정직 보고)
         let pool = await b01EnrichViaSeoji(discovered, window);
         pool = pool.filter(c => b01InWindow(c.pubdate, window)); // 확인된 출간일이 창 밖이면 제외(미상은 통과)
-        pool = await enrichB01PriceViaNaver(pool);               // 정가 공백 보완(네이버 살아있는 동안, 베스트에포트)
         return formatB01SeojiBlock(pool);
       };
 
@@ -5756,17 +5734,19 @@ ${FILE_DOWNLOAD_RULE}
             // 그 리프와의 대화를 이어가는 답변이다.
             await runDmChain(tab, { ...pausedChain, leafMessages: [...pausedChain.leafMessages, { role: "user", content: userText }] });
           } else {
-            // B-01: 이 대화에서 아직 추천도서 후보 풀을 받은 적이 없거나 사서가 새로고침을 요청한 경우에만
-            // 후보 풀을 API 호출용 메시지에 첨부한다(화면에 보이는 채팅 로그는 깔끔하게 유지).
-            // 과거에는 "수집|후보|신간|찾아|검색" 키워드 매칭으로 트리거했으나, "수서 목록 작성해줘"처럼
-            // 키워드가 없는 요청에서는 수집이 누락되어 에이전트가 데이터 대기 상태로 멈추는 문제가 있었다.
+            // B-01: 후보 풀은 화면 로그에 남기지 않고 API 호출용 메시지에만 붙인다. 조회는 대화당 1회
+            // (b01PoolBlockRef 캐시)지만 첨부는 매 턴이다 — 블록이 대화 이력에 저장되지 않으므로 붙이지
+            // 않은 턴에는 에이전트가 데이터를 통째로 잃고 "목록을 달라"고 되묻는다.
+            // 과거에는 "이 대화에 블록이 이미 있는지"를 currentMsgs 문자열 검색으로 판정했는데
+            // ①실제 머리말("[B-01 수서 선정 목록")과 검색어("[B-01 추천도서 후보 풀")가 어긋났고
+            // ②어시스턴트가 답변에서 그 문구를 언급하는 순간 그 뒤로 첨부가 영구히 끊겼다(2026-09-02 수정).
             let apiMsgs = newMsgs;
             if (tab === "b01-acquisition") {
-              const alreadyCollected = currentMsgs.some(m => typeof m.content === "string" && m.content.includes("[B-01 추천도서 후보 풀"));
               const wantsRecollect = /재수집|새로고침|다시\s*(수집|검색|찾|불러)/.test(userText);
-              if (!alreadyCollected || wantsRecollect) {
-                apiMsgs = newMsgs.slice(0, -1).concat({ role: "user", content: userText + await b01CandidatesBlock(userText) });
+              if (!b01PoolBlockRef.current || wantsRecollect) {
+                b01PoolBlockRef.current = await b01CandidatesBlock(userText);
               }
+              apiMsgs = newMsgs.slice(0, -1).concat({ role: "user", content: userText + b01PoolBlockRef.current });
             }
             stream = makeStreamHandler(setter);
             const reply = await callApi(prompt, apiMsgs, stream.onChunk);
@@ -5820,6 +5800,7 @@ ${FILE_DOWNLOAD_RULE}
         if (configFor(activeTabAtCall)) {
           const tab = activeTabAtCall;
           setBAgentMsgs(prev => ({ ...prev, [tab]: [{ role: "assistant", content: configFor(tab).init }] }));
+          if (tab === "b01-acquisition") b01PoolBlockRef.current = ""; // 새 대화는 후보 풀도 새로 조회
           // 대화를 리셋하면 진행 중이던 리프 위임 체인(있다면)도 함께 정리한다 — 그래야 다음 메시지가
           // 옛 체인을 이어받지 않고 새 DM 지시로 취급된다.
           if (DM_AGENTS_CONFIG[tab]) setDmChains(prev => { const next = { ...prev }; delete next[tab]; return next; });

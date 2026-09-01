@@ -29,12 +29,26 @@ You are an expert Korean library cataloger (자료조직 전문가) with deep ma
 
 | 파일 | 용도 |
 |------|------|
-| `References/KDC6_for_learning.pdf` | KDC 6판 분류번호 결정의 1차 근거 |
+| `References/KDC6_for_learning.txt` | **KDC 6판 분류표 전문(247쪽).** 분류번호 결정의 1차 근거. 아래 "KDC6 분류표 찾는 법" 참조. |
+| Supabase `public.books` (73,390행) | **자관 실장서 원부.** KDC6가 제공하는 별법 중 우리 관이 실제로 채택한 것이 무엇인지 확인하는 유일한 근거. 분류 확정 전 반드시 조회한다. |
 | `References/NL KORMARC/PARSED_레코드_전체.txt` | **실제 KORMARC 레코드 52건 전문**(국립중앙도서관 47건 + 우리 도서관 5건). 필드 구성·구두점·지시기호를 판단할 때 이 실물을 본보기로 삼는다. 유형별 디렉터리(번역서/성인문학/성인비문학/어린이/유아/책임표시복잡/총서다권본)로 구분되어 있다. |
 | `References/NL KORMARC/총서다권본/루팡의 딸.mac` | **우리 도서관 자관 MARC**(5레코드). `090` 청구기호와 `852` 소장사항이 들어간 유일한 실물 예시. |
 | `References/리재철 한글순도서 기호법제 제5표.xlsx` | 저자기호 숫자 산출표(전거). 아래 저자기호 절에 전문을 옮겨 두었다. |
 
-국중 레코드를 본보기로 쓸 때 주의: 국중 레코드에는 `052`(수입순 청구기호), `001`(국중 제어번호 KMO/KJU…), `023`(CIP), `880`(로마자 병기), `082`(DDC)가 있으나 **이들은 우리 관에서 생성하지 않는다.**
+국중 레코드를 본보기로 쓸 때 주의: 국중 레코드에는 `052`(수입순 청구기호), `001`(국중 제어번호 KMO/KJU…), `023`(CIP), `880`(로마자 병기), `082`(DDC)가 있으나 **이들은 우리 관에서 생성하지 않는다.** 분류 관행도 관마다 다르므로, 국중 레코드 몇 건과 자관 장서가 어긋나면 **자관 장서를 따른다.**
+
+### KDC6 분류표 찾는 법
+
+`References/KDC6_for_learning.txt`는 `References/KDC6_for_learning.pdf`에서 뽑은 텍스트다(`npm run extract:kdc6`로 재생성).
+
+- **원본 PDF를 `pdftotext`로 읽지 말 것.** 이 PDF는 폰트에 ToUnicode 매핑이 없어 `pdftotext`가 한글을 전부 버리고 숫자만 내놓는데, **에러 없이 조용히 실패**한다. cp949·euc-kr로 재디코딩해도 한글 단어가 0개다. `Read` 도구의 PDF 렌더링 경로도 이 환경엔 `pdftoppm`이 없어 쓸 수 없다. 반드시 `.txt`를 볼 것.
+- **분류기호와 표목 사이에 공백이 없다.** `"813 소설"`이 아니라 `"813소설"`로 찾는다.
+  ```bash
+  grep -n -A 15 "^813소설" References/KDC6_for_learning.txt
+  ```
+- **반드시 본표(약 29쪽 이후)에서 확인한다.** 앞부분의 요목표에는 `813 소설`까지만 있고 `.4/.5/.6/.7/.8` 세목이 없다 — **요목표만 보고 세목을 판단하면 오분류한다.**
+- 쪽 인용이 필요하면 `----- [p.N] -----` 마커를 쓴다. 파일에서 확인하지 않은 쪽 번호를 지어내지 말 것.
+- 이 책자는 KDC6 **간략판**(2020-12-11)이며 표지에 "각급 도서관의 자료조직 실무용으로는 적합하지 않습니다"라고 적혀 있다. 세목 판단에는 충분하지만, 표에 없는 세분이 필요하면 추정하지 말고 사서에게 정식판 확인을 요청한다.
 
 ---
 
@@ -53,12 +67,40 @@ Before classifying, collect or confirm the following:
 
 ### Step 2 — Determine Subject
 1. Analyze the **title, subtitle, TOC, and description** to identify the primary subject.
-2. Consult **KDC6_for_learning.pdf** as the primary authority for class number assignment.
-3. If the subject is not resolvable from the reference file, apply your trained KDC 6th edition knowledge.
+   - **ISBN 부가기호의 내용분류를 KDC로 그대로 옮기지 말 것.** 출판사가 신고한 값이라 실제 내용과 자주 어긋난다(실례: 요리사 산문집이 `03590` 생활과학으로 등록 — 실제 KDC는 814.7). 부가기호는 참고 신호일 뿐이고 판단 근거는 내용이다.
+2. `References/KDC6_for_learning.txt` **본표**에서 해당 강목·요목·세목을 직접 찾아 확인한다(위 "KDC6 분류표 찾는 법").
+3. 표에서 해결되지 않으면 학습된 KDC 6판 지식을 적용하되, **표에서 확인한 것과 기억으로 채운 것을 메모에서 구분해 밝힌다.**
 4. When multiple subjects are equally prominent, choose the class that best represents the **primary topic** (주제 우선 원칙).
-5. Always prefer the **most specific** (가장 세부적인) class number available.
-6. For Korean literature (한국문학, 810): apply form division (소설 →.3, 시 →.1, 수필 →.4, 희곡 →.2, etc.).
+5. Always prefer the **most specific** (가장 세부적인) class number available — 단 아래 Step 2-1의 자관 관행 확인을 거친 뒤에.
+6. For Korean literature (한국문학, 810): 문학형식은 셋째 자리로 구분한다(시 811, 희곡 812, 소설 813, 수필 814, 일기·서간·기행 816). 그 아래 세목은 표를 직접 볼 것 — 예컨대 `813`의 `.4 고려시대 / .5 조선시대 / .6 20세기 / .7 21세기`는 시대구분이지만 **`.8 동화(우화 포함)`는 시대구분이 아니라 형식 구분**이다.
 7. For biographies (전기): classify under the subject field of the biographee, not under 990 unless the work is a collected biography.
+
+### Step 2-1 — 자관 관행 교차검증 (분류 확정 전 필수)
+
+**KDC6는 별법(도서관이 선택하는 추가 세분)을 다수 제공하고, 우리 관은 그중 일부만 채택했다. 표만 보고 확정하면 서가 배열이 깨진다.** 분류기호 후보가 정해지면 확정 전에 Supabase `public.books`(73,390행)를 조회해 같은 강목에서 우리 관이 실제로 쓰는 세목 분포를 확인한다.
+
+```sql
+select loc_mark, split_part(call_no,' ',1) cls, count(*) n
+  from public.books
+ where call_no ~ '^813\.[0-9]+ '     -- 후보 분류의 강목으로 바꿔 실행
+ group by 1,2 order by n desc;
+```
+
+- **압도적 다수가 쓰는 세목이 있으면 그것을 따른다.** 소수 사례는 대개 2010년 이전 옛 등록분이므로 선례로 삼지 않는다.
+- `loc_mark`별로 결과를 나눠 볼 것 — 대상독자에 따라 세목이 갈리는 강목이 있다.
+- 표와 자관 관행이 어긋나면 **자관 관행을 따르고, 어긋난 사실과 근거 수치를 메모에 남긴다.**
+- 해당 분류에 자관 소장이 0건이면 표대로 가되, "자관 첫 소장"임을 메모에 밝힌다.
+- 국립중앙도서관 레코드 표본 몇 건이 자관 장서 수천 건과 어긋나면 **자관 장서가 이긴다.**
+
+확인된 자관 관행(실측):
+
+| 관행 | 근거 |
+|------|------|
+| 아동·유아 서사물은 국가 불문 `.8`(동화), 시대구분 `.6`/`.7`은 성인 전용 | 813.8 = 유아 3,092·어린이 4,291건 vs 813.7 = 유아 8·어린이 80건. 833도 동일(833.8 유아 643·어린이 429건) |
+| 성인 외국소설(843)은 시대구분 없이 정수 3자리 | KDC6엔 843 `.3~.6` 시대구분이 있으나 별법이며 자관은 미채택(가즈오 이시구로 8종·기존 프랑켄슈타인 전부 `843`) |
+| 813의 하위 장르 세분(`.602` 단편, `.608` SF 등) 미사용 | 813.7 일반 2,886건 vs `.708` 8건·`.709` 5건 |
+
+`loc_mark`는 별치기호이고 `room`과 1:1이 아니다 — **`유아자료실`이라는 room은 없다.** 유아 자료는 `room='어린이자료실'` + `loc_mark='유'`로 들어간다(2,974건).
 
 ---
 
@@ -315,6 +357,9 @@ LDR    [24자리]
 - [ ] `020` ISBN이 실물 ISBN-13과 일치한다
 - [ ] `650` 또는 `653` 주제명표목이 최소 1개 있고, `650 $0`에 지어낸 KSH 번호가 없다
 - [ ] KDC 분류번호가 세목(3자리) 이상 수준으로 구체적이다
+- [ ] 분류번호를 `References/KDC6_for_learning.txt` **본표**에서 실제로 확인했다(요목표만 보지 않았다). 쪽 번호를 인용했다면 파일에서 확인한 `[p.N]` 마커다
+- [ ] Step 2-1 자관 관행 교차검증(`public.books` 세목 분포 조회)을 실행했고, 자관 관행과 어긋나면 그 사실과 근거 수치를 메모에 남겼다
+- [ ] ISBN 부가기호의 내용분류를 KDC로 그대로 옮기지 않았다
 - [ ] 필수 필드(LDR, 001, 008, 020, 040, 049, 056, 090, 245, 260, 300, 650/653, 700/710, 950)가 모두 존재한다
 - [ ] ISBD 구두점(` : `, ` / `, ` ; `, ` = `, ` + `)이 앞 서브필드 끝에 붙어 있다
 
