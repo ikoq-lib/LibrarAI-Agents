@@ -48,18 +48,25 @@ const REPLIES = [
 - 요청 판단: 초과 집행 승인 여부 결정 필요
 ===확인필요끝===
 
+===보고서시작===
 # 2026-W30 주간 업무 계획 (초안)
 
-## ① 표지
-작성: 기획업무팀 기획담당
+- 대상 기간 2026-W30 / 작성: 기획업무팀 기획담당 / 작성일 2026. 7. 20.
 
-## ② 요약
+## 총괄 요약
 장서·독서문화 도메인 주간 계획 취합본입니다.
 
-## ⑤ 확인·승인 필요 항목
+---
+
+{{도메인상세}}
+
+---
+
+## 최고관리자 확인·승인 필요 항목
 - ESC_강사료_기준초과_승인필요 (DM-03)
 
-_초안 · 최고관리자 검토 전 미확정_`,
+본 문서는 초안이며 최고관리자 검토·확정 전까지 확정본이 아닙니다.
+===보고서끝===`,
 ];
 
 // SSE 한 방에 content 전체 + [DONE] 전송 (requestApi가 \n 단위로 파싱)
@@ -127,6 +134,12 @@ const check = (name, cond) => { results.push({ name, pass: !!cond }); if (!cond)
   check('확인 필요 미니 노트 카드', await page.locator('text=수시 미니 노트').count() >= 1);
   check('미니 노트 본문(escalation 인용)', await page.locator('text=ESC_강사료_기준초과_승인필요').count() >= 1);
   check('통합 문서 ⑤절 렌더', await page.locator('text=확인·승인 필요 항목').count() >= 1);
+  // 레버1 — 도메인별 상세는 모델이 아니라 코드가 DM 산출물 원문으로 조립한다.
+  const docText = await page.evaluate(() => document.body.innerText);
+  check('상세 조립: DM-01 산출물 원문 포함', docText.includes('DM01_최종요약'));
+  check('상세 조립: DM-03 산출물 원문 포함', docText.includes('DM03_최종요약'));
+  check('상세 조립: 도메인 섹션 제목 생성', docText.includes('상세 기획안'));
+  check('상세 조립: 자리표시자 잔존 없음', !docText.includes('{{도메인상세}}'));
   check('run 완료 badge', await page.locator('text=완료').count() >= 1);
 
   console.log('\n[4] 집계 주입 요청 바디 검증');
@@ -141,6 +154,7 @@ const check = (name, cond) => { results.push({ name, pass: !!cond }); if (!cond)
   await page.waitForTimeout(2000);
   check('복원: 진행 패널 유지', await page.locator('text=실행 현황').count() >= 1);
   check('복원: 최종 문서 ⑤절 유지', await page.locator('text=확인·승인 필요 항목').count() >= 1);
+  check('복원: 조립된 도메인 상세 유지', (await page.evaluate(() => document.body.innerText)).includes('DM01_최종요약'));
 
   console.log('\n[6] interrupted 강등 (진행 중 run 새로고침)');
   await page.evaluate(() => {
