@@ -3187,6 +3187,25 @@ ${extra}
 - 리프 최종 선택은 각 DM이 하되, 이번 기간 활성 업무에 해당하는 리프만 다루도록 instruction에 업무명·리프 힌트를 명시합니다(게이팅 — DM이 담당 리프 전체로 확산하지 않게 함).
 - self_tasks: "chief-coordinator 직접" 담당 업무명 배열(없으면 빈 배열).
 
+## REVISE 블록 (이미 만든 계획서·보고서를 부분 수정할 때 — 매우 중요)
+직전에 이미 통합 문서를 만든 뒤 최고관리자가 "행사 예산 200만원으로 줄여줘", "장서 부분만 다시", "요약을 짧게" 처럼 **일부만 고치는 요청**을 하면 DISPATCH를 내지 마십시오. DISPATCH는 도메인 전체를 처음부터 다시 실행시키므로 한 줄 수정에 수 분이 걸립니다. 대신 아래 블록을 사용합니다.
+
+===REVISE===
+{"target": "dm03-reading-culture-domain", "instruction": "9월 독서진흥행사 예산을 200만원으로 축소해 상세를 다시 작성", "refresh_summary": true}
+===REVISE_END===
+
+- target: 아래 셋 중 하나만 씁니다.
+  - DM·A-03 id — 그 도메인 상세만 다시 만듭니다(담당 리프까지 이어서 재실행).
+  - 리프 id — 그 리프 산출물 1건만 다시 만듭니다(가장 저렴합니다). 예: "b02-wishlist", "planner", "ll-planner"
+  - "summary" — 도메인 상세는 그대로 두고 표지·총괄 요약·예산 개요·승인 항목만 다시 씁니다.
+- **가능하면 리프 id를 고르십시오.** 수정 요청이 특정 업무 하나를 지목하면(행사 예산, 동아리 명단 등) 그 업무를 맡은 리프가 정확한 대상입니다. DM id는 한 도메인의 여러 업무가 함께 바뀔 때만 씁니다.
+- instruction: 무엇을 어떻게 고칠지 한 문장. 원래 지시를 다시 쓰지 말고 **수정 지시**만 씁니다.
+- refresh_summary: 상세를 고친 뒤 총괄 요약도 다시 쓸지 여부(기본 true). target이 "summary"면 무시됩니다.
+- **이미 만든 보고서를 당신이 직접 다시 쓰지 마십시오(가장 흔한 오작동).** 수정 요청에 대해 통합 문서 전문을 새로 작성해 응답하면(===보고서시작=== 블록을 다시 출력하면) 그 문서는 실행 기록과 연결되지 않아 확정·문서 생성에 쓸 수 없고, 화면에 보이는 내용과 시스템이 보관한 내용이 어긋납니다. 수정 요청에는 **짧은 안내문 1~2문장 + REVISE 블록만** 내고, 본문 재조립은 시스템에 맡기십시오.
+- **대상 기간 자체가 바뀌면**(9월 → 10월) REVISE가 아니라 DISPATCH입니다. 새 계획서를 만드는 일이므로 전체 실행이 맞습니다.
+- 직전에 만든 문서가 없는 상태에서는 REVISE를 쓰지 마십시오(시스템이 무시하고 안내만 표시합니다).
+- 오탈자·표기 수정처럼 문장만 손보면 되는 요청은 REVISE도 필요 없습니다 — 보고서 패널에서 직접 편집하실 수 있다고 안내하십시오.
+
 ## 집계 결과 수신 후 (2라운드) — 요약·총평만 작성합니다
 "[집계 결과 — 시스템 자동 주입]"으로 시작하는 메시지를 받으면 **새 DISPATCH를 내지 말고** 통합 문서의 **뼈대**를 작성하십시오.
 - **가장 중요 — 도메인별 상세 본문은 절대 옮겨 적지 마십시오.** 각 DM 산출물 원문은 시스템이 자동으로 삽입합니다. 상세가 들어갈 자리에는 자리표시자 \`${DOMAIN_DETAIL_PLACEHOLDER}\` 한 줄만 단독 행으로 두십시오. 원문을 다시 옮겨 적으면 출력 상한에 걸려 문서가 중간에 잘립니다.
@@ -3254,6 +3273,26 @@ ${FILE_DOWNLOAD_RULE}
         event_name: typeof parsed.event_name === "string" ? parsed.event_name : null,
         targets: targets.slice(0, 6),
         self_tasks: Array.isArray(parsed.self_tasks) ? parsed.self_tasks.filter(s => typeof s === "string") : [],
+      };
+    };
+
+    // chief 2차 이후 턴: 이미 만든 run을 "부분만" 갈아끼우는 블록 (R-2).
+    // DISPATCH가 전체 재실행이라면 REVISE는 조각 단위 재생성 — 5개 도메인을 다시 돌리지 않는다.
+    const REVISE_BLOCK_RE = /===REVISE===([\s\S]*?)===REVISE_END===/;
+    const stripReviseBlock = (text) => text.replace(REVISE_BLOCK_RE, "").trim();
+    const parseReviseBlock = (text) => {
+      const m = REVISE_BLOCK_RE.exec(text || "");
+      if (!m) return null;
+      const raw = m[1].trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch { return null; }
+      const target = typeof parsed.target === "string" ? parsed.target.trim() : "";
+      if (!target) return null;
+      return {
+        target,
+        instruction: typeof parsed.instruction === "string" ? parsed.instruction.trim() : "",
+        refresh_summary: parsed.refresh_summary !== false,
+        runId: typeof parsed.runId === "string" ? parsed.runId : null,
       };
     };
 
@@ -3884,14 +3923,27 @@ ${FILE_DOWNLOAD_RULE}
     // ===보고서시작===~===보고서끝===를 사람이 읽는 문서 형태(표지+요약+상세)로 렌더하고
     // 상단에 PDF 다운로드 버튼을 붙인다. 블록 앞뒤 일반 텍스트는 마크다운으로 렌더한다.
     const REPORT_BLOCK_RE = /===보고서시작===([\s\S]*?)===보고서끝===/;
-    function ReportDocument({ content }) {
+
+    // 확정 배지용 — 공문서 날짜 표기(2026. 9. 3.)에 시각을 붙인다.
+    const fmtStamp = (iso) => {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      const p = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}. ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    // run·onConfirm·onReopen은 chief 콘솔에서만 넘어온다(리프 탭에서는 없이 호출 — 기존 동작 유지).
+    function ReportDocument({ content, run, onConfirm, onReopen }) {
       const [downloading, setDownloading] = useState(false);
       const [downloadError, setDownloadError] = useState("");
-      const m = content.match(REPORT_BLOCK_RE);
-      if (!m) return <MarkdownRenderer text={content} />;
+      const [confirming, setConfirming] = useState(false);
+      const isConfirmed = !!(run && run.stage === "confirmed" && run.confirmed);
+      // 확정 후에는 동결 스냅샷을 보여준다 — 이후 채팅이 무엇을 하든 확정된 문서 내용은 흔들리지 않는다.
+      const source = isConfirmed ? (run.confirmed.reportText || content) : content;
+      const m = source.match(REPORT_BLOCK_RE);
+      if (!m) return <MarkdownRenderer text={source} />;
       const report = m[1].trim();
-      const before = content.slice(0, m.index).trim();
-      const after = content.slice(m.index + m[0].length).trim();
+      const before = source.slice(0, m.index).trim();
+      const after = source.slice(m.index + m[0].length).trim();
       const titleM = report.match(/^#\s+(.+)$/m);
       const title = (titleM ? titleM[1].trim() : "업무계획 보고서").slice(0, 60);
       const handleHwpx = async () => {
@@ -3913,13 +3965,46 @@ ${FILE_DOWNLOAD_RULE}
           <div style={{ border: "1px solid var(--line)", borderRadius: "var(--radius)", overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--bg-sunken)", borderBottom: "1px solid var(--line)", padding: "8px 12px" }}>
               <span style={{ fontSize: "12px", fontWeight: "700", color: "var(--chrome)" }}>📄 통합 보고서 · {title}</span>
-              <button onClick={handleHwpx} disabled={downloading}
-                style={{ ...reportBtnStyle, marginLeft: "auto", cursor: downloading ? "not-allowed" : "pointer" }}
-              >{downloading ? "생성 중…" : "⬇ hwpx 다운로드"}</button>
-              <button onClick={() => printReport(report, title)}
-                style={{ ...reportBtnStyle, cursor: "pointer" }}
-              >⬇ PDF 다운로드</button>
+              {isConfirmed ? (
+                <span style={{ fontSize: "11.5px", fontWeight: "800", color: "var(--accent)", background: "var(--accent-tint)", border: "1px solid var(--accent)", borderRadius: "6px", padding: "3px 9px" }}>
+                  ✅ {run.confirmed.seq}차 확정 · {fmtStamp(run.confirmed.at)}
+                </span>
+              ) : null}
+              <div style={{ display: "flex", gap: "8px", marginLeft: "auto" }}>
+                {run && !isConfirmed && run.reportSkeleton ? (
+                  <button onClick={() => setConfirming(v => !v)}
+                    style={{ ...reportBtnStyle, cursor: "pointer", borderColor: "var(--accent)", color: "var(--accent)" }}
+                  >✅ 확정</button>
+                ) : null}
+                {isConfirmed && onReopen ? (
+                  <button onClick={onReopen} style={{ ...reportBtnStyle, cursor: "pointer" }}>🔓 수정하기</button>
+                ) : null}
+                <button onClick={handleHwpx} disabled={downloading}
+                  style={{ ...reportBtnStyle, cursor: downloading ? "not-allowed" : "pointer" }}
+                >{downloading ? "생성 중…" : "⬇ hwpx 다운로드"}</button>
+                <button onClick={() => printReport(report, title)}
+                  style={{ ...reportBtnStyle, cursor: "pointer" }}
+                >⬇ PDF 다운로드</button>
+              </div>
             </div>
+            {confirming && !isConfirmed && run ? (
+              <div style={{ borderBottom: "1px solid var(--line)", background: "var(--warn-tint)", padding: "12px 14px", fontSize: "12.5px", color: "var(--ink)" }}>
+                <div style={{ fontWeight: "800", marginBottom: "6px" }}>이 내용으로 확정할까요?</div>
+                <div style={{ lineHeight: "1.75" }}>
+                  대상 기간 <b>{run.target_period || run.event_name || "-"}</b> · 도메인 <b>{(run.dispatches || []).length}개</b> · 수정 이력 <b>{(run.revisions || []).length}건</b>
+                  {run.confirmed ? <> · 직전 확정 <b>{run.confirmed.seq}차</b></> : null}
+                </div>
+                <div style={{ color: "var(--muted)", marginTop: "5px", lineHeight: "1.7" }}>
+                  확정하면 이 내용으로 실행 문서를 생성합니다. 확정 이후의 수정은 차수가 올라가며, 이전 차수로 만든 문서와 내용이 달라집니다.
+                </div>
+                <div style={{ display: "flex", gap: "7px", marginTop: "10px" }}>
+                  <button onClick={() => { setConfirming(false); if (onConfirm) onConfirm(); }}
+                    style={{ ...reportBtnStyle, cursor: "pointer", background: "var(--accent)", color: "white", borderColor: "var(--accent)" }}
+                  >{run.confirmed ? `${run.confirmed.seq + 1}차 확정` : "1차 확정"}</button>
+                  <button onClick={() => setConfirming(false)} style={{ ...reportBtnStyle, cursor: "pointer" }}>취소</button>
+                </div>
+              </div>
+            ) : null}
             <div style={{ padding: "26px 32px", background: "white" }}>
               <MarkdownRenderer text={report} />
             </div>
@@ -3990,6 +4075,44 @@ ${FILE_DOWNLOAD_RULE}
   urgency는 즉시 사람 판단이 필요한 긴급 건만 "urgent", 나머지는 "normal"입니다.
 - hwpx 문서 생성 여부를 묻지 말고 텍스트로만 응답하십시오.
 `;
+
+    // ── 문서화 패스 전용 접미사 (설계 5절: 확정본 → 실행 문서 번들) ──────────────
+    // R-5 결정 — 계획 턴은 지금처럼 텍스트만 받고(CHIEF_DISPATCH_SUFFIX 유지), 확정 이후 이 접미사로
+    //            리프를 한 번 더 호출해 문서를 만든다. 계획 단계가 무거워지지 않고 확정본이 유일한 근거가 된다.
+    // R-7 결정 — 이 경로에서는 HWPX_SCOPE_CONFIRM_RULE의 범위 확인 질문을 끈다. 무엇을 만들지는 생성 시작 전
+    //            체크리스트에서 사서가 이미 가감했으므로 문서마다 되묻지 않는다. 채팅에서 개별 요청할 때의
+    //            확인 규칙은 그대로 살아 있다(이 접미사가 붙는 문서화 패스에서만 무력화).
+    const DOC_GEN_SUFFIX = `
+
+---
+## 문서화 패스 실행 모드 (확정된 월간계획 → 실행 문서)
+- 이 요청은 최고관리자가 확정한 월간 업무계획서를 근거로 **지정된 문서 1건**을 작성하라는 것입니다. 사서/최고관리자에게 직접 질문하지 마십시오.
+- **문서 범위를 되묻지 마십시오.** 기안문인지 붙임인지는 사서가 생성 목록에서 이미 선택했습니다. 확인 질문 없이 지정된 문서만 작성합니다.
+- 지정된 구분자 블록만 출력합니다 — 기안문이면 ===기안문시작===~===기안문끝===, 붙임이면 ===첨부시작===~===첨부끝===, 표 형식 붙임이면 ===엑셀시작===~===엑셀끝===. 지정되지 않은 블록은 만들지 않습니다.
+- **확정본에 없는 사실을 새로 만들지 마십시오.** 확정본에 "(가정)"으로 표기된 값은 그 표기를 유지한 채 그대로 옮깁니다. 확정본에 없는 수치·일자·명단이 필요한 칸은 "(미정)"으로 두고 문서를 완성합니다.
+- 모든 문서의 첫 줄에 "※ 본 문서는 AI가 생성한 초안이며 담당자 검토 후 결재 상신하십시오."를 넣습니다.
+- 공문서 표기 규칙을 준수합니다 — 날짜 2026. 9. 3. / 시간 24시각제 09:00 / 금액 금221,750원(금이십이만일천칠백오십원) / 항목기호 1. → 가. → 1) → 가) / 붙임 표시문 끝에 2타 띄우고 끝.
+`;
+
+    // R-6 — 한 응답에서 기안문·붙임을 여러 건 뽑아낸다(문서 번들용).
+    // 기존 단건 파서(TabbedDocument)는 화면 탭 렌더링용으로 그대로 둔다.
+    const DOC_BLOCK_SPECS = [
+      { kind: "기안문", format: "hwpx", source: "===기안문시작===([\\s\\S]*?)===기안문끝===" },
+      { kind: "첨부",   format: "hwpx", source: "===첨부시작===([\\s\\S]*?)===첨부끝===" },
+      { kind: "엑셀",   format: "xlsx", source: "===엑셀시작===([\\s\\S]*?)===엑셀끝===" },
+    ];
+    const parseDocBlocks = (text) => {
+      const out = [];
+      DOC_BLOCK_SPECS.forEach(({ kind, format, source }) => {
+        const rx = new RegExp(source, "g");
+        let m;
+        while ((m = rx.exec(text || "")) !== null) {
+          const body = m[1].trim();
+          if (body) out.push({ kind, format, body, at: m.index });
+        }
+      });
+      return out.sort((a, b) => a.at - b.at);
+    };
 
     // 레버4 — 동시 in-flight를 max개로 제한하는 세마포어. 중첩 병렬(DM들 + 각 DM의 리프들)이어도
     // 실제 fetch 동시 실행 수를 묶어 429(rate limit)를 예방한다. 각 콜은 완료 즉시 슬롯을 반납하므로
@@ -5095,9 +5218,32 @@ ${FILE_DOWNLOAD_RULE}
         } catch {}
       }, [bAgentMsgs, plannerMsgs, clubMsgs, llPlannerMsgs, llRecruiterMsgs, llStudentRecruiterMsgs, llOperationLogMsgs, d03Msgs, d06Msgs, tabActivity]);
 
-      // chief 채팅·실행 기록도 localStorage에 보존 — 새로고침 시 진행 중 run은 복원 단계에서 "중단됨"으로 강등된다
+      // chief 채팅·실행 기록도 localStorage에 보존 — 새로고침 시 진행 중 run은 복원 단계에서 "중단됨"으로 강등된다.
+      // R-4로 리프 원문(leafSteps[].text)까지 남기면서 용량이 커지므로(K-1), 최근 RAW_KEEP_RUNS건만 원문을 보존하고
+      // 그보다 오래된 run은 요약·resultText만 남긴다. 부분 재생성·문서화는 최근 run에서만 일어난다.
+      const RAW_KEEP_RUNS = 3;
+      const stripLeafText = (dispatches) => (dispatches || []).map(d => ({
+        ...d, leafSteps: (d.leafSteps || []).map(ls => ({ ...ls, text: "" })),
+      }));
       useEffect(() => {
-        try { localStorage.setItem("librarai_chief_state", JSON.stringify({ chiefMsgs, chiefRuns })); } catch {}
+        const ids = Object.keys(chiefRuns).sort();     // runId = "run_" + Date.now() → 사전순 = 시간순
+        const keepRaw = new Set(ids.slice(-RAW_KEEP_RUNS));
+        // 확정 스냅샷은 증빙이라 기본적으로 통째로 보존한다. 용량이 넘칠 때만 스냅샷 안의 리프 원문을
+        // 덜어내되, 문서 생성이 실제로 쓰는 reportText·resultText는 어떤 단계에서도 건드리지 않는다.
+        const build = (dropConfirmedRaw) => {
+          const slim = {};
+          ids.forEach(id => {
+            const run = chiefRuns[id];
+            const next = keepRaw.has(id) ? { ...run } : { ...run, dispatches: stripLeafText(run.dispatches) };
+            if (dropConfirmedRaw && next.confirmed) {
+              next.confirmed = { ...next.confirmed, dispatches: stripLeafText(next.confirmed.dispatches) };
+            }
+            slim[id] = next;
+          });
+          return JSON.stringify({ chiefMsgs, chiefRuns: slim });
+        };
+        try { localStorage.setItem("librarai_chief_state", build(false)); }
+        catch { try { localStorage.setItem("librarai_chief_state", build(true)); } catch {} }
       }, [chiefMsgs, chiefRuns]);
 
       // 사서가 "확인 필요" 단계를 승인 → 완료 처리하고 다음 단계를 시작
@@ -5538,12 +5684,13 @@ ${FILE_DOWNLOAD_RULE}
             const leafPrompt = systemPromptFor(targetId) + CHIEF_DISPATCH_SUFFIX;
             let reply = await chiefLimit(() => callApi(leafPrompt, leafMessages, undefined, { signal, max_tokens: LEAF_MAX_TOKENS }));
             reply = await resolveLeafSideEffects(targetId, leafPrompt, leafMessages, reply);
-            dispatch.leafSteps[i] = { agentId: targetId, status: "done", summary: summarizeReply(reply) };
+            // R-4 — 요약뿐 아니라 원문(text)까지 보존한다: 리프 단위 부분 재생성과 문서화 패스의 유일한 재료.
+            dispatch.leafSteps[i] = { agentId: targetId, status: "done", summary: summarizeReply(reply), text: reply };
             sync();
             return { targetId, reply };
           } catch (err) {
             if (err && err.name === "AbortError") return null;
-            dispatch.leafSteps[i] = { agentId: targetId, status: "error", summary: err.message };
+            dispatch.leafSteps[i] = { agentId: targetId, status: "error", summary: err.message, text: "" };
             sync();
             return null;
           }
@@ -5579,6 +5726,256 @@ ${FILE_DOWNLOAD_RULE}
         return text.slice(0, block.index) + `===보고서시작===${injected}===보고서끝===` + text.slice(block.index + block[0].length);
       };
 
+      // ── 집계 주입문 (조각에서 매번 재조립) ─────────────────────────
+      // 최초 컴파일과 REVISE 후 재컴파일이 같은 형식을 공유한다.
+      const buildChiefAggregate = (run) => {
+        const allEscalations = run.dispatches.flatMap(d => (d.escalations || []).map(e => ({ ...e, source_dm: codeFor(d.agent) })));
+        return [
+          "[집계 결과 — 시스템 자동 주입]",
+          `※ 아래 각 DM 본문은 총괄 요약 작성용 앞부분 발췌입니다. 산출물 원문 전체는 시스템이 최종 문서의 ${DOMAIN_DETAIL_PLACEHOLDER} 자리에 자동 삽입하므로, 도메인별 상세 본문을 다시 옮겨 적지 마십시오.`,
+          ...run.dispatches.map(d => {
+            const body = (d.resultText || "(응답 없음)");
+            const clipped = body.length > CHIEF_RESULT_CHAR_LIMIT ? body.slice(0, CHIEF_RESULT_CHAR_LIMIT) + "\n…(요약 작성용 발췌 — 이하 생략, 원문은 시스템이 문서에 삽입)" : body;
+            return `### ${codeFor(d.agent)} ${nameFor(d.agent)} (${d.status === "done" ? "완료" : "수집 실패"})\n${clipped}`;
+          }),
+          `### escalations 취합\n${allEscalations.length ? JSON.stringify(allEscalations, null, 1) : "(없음)"}`,
+          `### chief 직접 담당 업무\n${(run.self_tasks || []).length ? run.self_tasks.map(x => `- ${x}`).join("\n") : "(없음)"}`,
+        ].join("\n\n");
+      };
+
+      // R-3 — run 컨텍스트 없이 보고서가 다시 그려지는 경로에서 자리표시자가 화면에 새는 것을 막는다.
+      const DOMAIN_DETAIL_PLACEHOLDER_RE_G = new RegExp(DOMAIN_DETAIL_PLACEHOLDER_RE.source, "gm");
+      const guardPlaceholder = (text) => (text || "").replace(DOMAIN_DETAIL_PLACEHOLDER_RE_G, "");
+
+      // 설계 원칙 1 — 화면의 보고서 전문은 저장 대상이 아니라 조각(reportSkeleton + resultText)의 파생값이다.
+      const renderReport = (run) => guardPlaceholder(injectDomainDetail(run.reportSkeleton || "", buildDomainDetailBody(run)));
+
+      const buildReqJson = (run) => ({
+        requester_agent: "chief-coordinator",
+        request_type: run.scope === "event" ? "event_result_request" : "plan_request",
+        scope: run.scope,
+        ...(run.target_period ? { target_period: run.target_period } : {}),
+        ...(run.event_name ? { event_name: run.event_name } : {}),
+      });
+
+      // 디스패치 1건 실행 — 최초 실행과 REVISE 재실행이 공유한다.
+      // reviseNote가 있으면 원래 지시 뒤에 수정 지시를 덧붙여 그 디스패치만 다시 만든다.
+      const runOneDispatch = async (run, i, signal, sync, reviseNote) => {
+        const d = run.dispatches[i];
+        if (chiefCancelRef.current) return;
+        d.status = "running"; d.escalations = []; sync();
+        const instruction = reviseNote
+          ? `${d.instruction}\n\n[수정 지시 — 아래 내용을 반영해 다시 작성]\n${reviseNote}`
+          : d.instruction;
+        const dmMessages = [{ role: "user", content: `[chief-coordinator 요청]\n${JSON.stringify(buildReqJson(run))}\n\n[지시 내용]\n${instruction}` }];
+        try {
+          // DM은 라우터 접미사(리프 실제 호출 강제), A-03 등 비-DM은 산출물 접미사를 붙인다.
+          const isDM = !!DM_AGENTS_CONFIG[d.agent];
+          const dmPrompt = systemPromptFor(d.agent) + (isDM ? CHIEF_DM_SUFFIX : CHIEF_DISPATCH_SUFFIX);
+          let reply = await chiefLimit(() => callApi(dmPrompt, dmMessages, undefined, { signal, max_tokens: DM_MAX_TOKENS }));
+          reply = await resolveLeafSideEffects(d.agent, dmPrompt, dmMessages, reply);
+          // DM이 리프 위임(ROUTE)을 냈다면 리프까지 실행 후 결과를 DM에 되돌려 취합을 받는다.
+          // 디스패치당 ROUTE 1라운드 상한 — DM 2차 응답의 재-ROUTE는 무시(strip)한다.
+          const route = isDM ? parseRouteBlock(reply) : null;
+          if (route) {
+            const leafResults = await runChiefLeafChain(run, i, route, instruction, signal, sync);
+            if (leafResults === null) return; // 취소됨
+            if (leafResults.length) {
+              const followUp = `[리프 산출물]\n${leafResults.map(r => `### ${codeFor(r.targetId)} ${nameFor(r.targetId)}\n${clipForRelay(r.reply)}`).join("\n\n")}\n\n위 리프 산출물을 도메인 계획 상세로 취합하되, 각 산출물 본문을 요약하지 말고 원문 그대로 포함해 응답하십시오. 추가 위임(ROUTE) 없이 취합 결과와 필요 시 escalations 블록만 응답합니다.`;
+              reply = await chiefLimit(() => callApi(dmPrompt, [...dmMessages, { role: "assistant", content: stripRouteBlock(reply) }, { role: "user", content: followUp }], undefined, { signal, max_tokens: DM_MAX_TOKENS }));
+            }
+            reply = stripRouteBlock(reply);
+          } else if (reviseNote && isDM) {
+            // 부분 재생성인데 DM이 ROUTE를 내지 않는 경우 — DM이 상세를 자기 요약으로 다시 써버려
+            // 도메인 상세가 쪼그라든다(실측: 12,069자 → 3,046자). 보존해 둔 직전 리프 원문(R-4)을
+            // 되물려 원문 수준의 상세를 유지한 채 수정만 반영시킨다.
+            const kept = (d.leafSteps || []).filter(x => x.text);
+            if (kept.length) {
+              const bundle = kept.map(x => `### ${codeFor(x.agentId)} ${nameFor(x.agentId)}\n${clipForRelay(x.text)}`).join("\n\n");
+              const followUp = `[리프 산출물 — 직전 실행 원문]\n${bundle}\n\n[수정 지시]\n${reviseNote}\n\n위 리프 산출물에 수정 지시를 반영하되, 수정과 무관한 부분은 원문 그대로 두고 요약하지 마십시오. 직전 실행과 같은 수준의 상세를 유지해 도메인 계획 상세로 취합해 응답합니다. 추가 위임(ROUTE) 없이 취합 결과와 필요 시 escalations 블록만 응답합니다.`;
+              reply = await chiefLimit(() => callApi(dmPrompt, [...dmMessages, { role: "assistant", content: stripRouteBlock(reply) }, { role: "user", content: followUp }], undefined, { signal, max_tokens: DM_MAX_TOKENS }));
+              reply = stripRouteBlock(reply);
+            }
+          }
+          d.escalations = parseEscalationsBlock(reply);
+          d.resultText = stripEscalationsBlock(reply);
+          d.status = "done";
+        } catch (err) {
+          if (err && err.name === "AbortError") return;
+          d.status = "error";
+          d.resultText = "수집 실패: " + err.message;
+        }
+        sync();
+      };
+
+      // ── 부분 재생성 (R-2) ──────────────────────────────────────────
+      // target은 DM id · 리프 id · "summary" 중 하나. 어느 조각을 건드리는지에 따라 재실행 범위가 갈린다.
+      const findReviseTarget = (run, target) => {
+        if (target === "summary") return { kind: "summary" };
+        const dIdx = run.dispatches.findIndex(d => d.agent === target);
+        if (dIdx >= 0) return { kind: "dispatch", dIdx };
+        for (let i = 0; i < run.dispatches.length; i++) {
+          const lIdx = (run.dispatches[i].leafSteps || []).findIndex(ls => ls.agentId === target);
+          if (lIdx >= 0) return { kind: "leaf", dIdx: i, lIdx };
+        }
+        return null;
+      };
+
+      // DM 취합본(resultText) 안의 해당 리프 헤딩 블록만 새 원문으로 치환한다. 헤딩을 못 찾으면 null.
+      const spliceLeafText = (resultText, targetId, newText) => {
+        const heading = `### ${codeFor(targetId)} ${nameFor(targetId)}`;
+        const start = (resultText || "").indexOf(heading);
+        if (start < 0) return null;
+        const bodyStart = start + heading.length;
+        const nextM = resultText.slice(bodyStart).match(/\n(?=#{1,3} )/);
+        const end = nextM ? bodyStart + nextM.index : resultText.length;
+        return resultText.slice(0, start) + heading + "\n" + newText.trim() + "\n" + resultText.slice(end);
+      };
+
+      const runReviseCycle = async (run, revise, signal, sync) => {
+        const spot = findReviseTarget(run, revise.target);
+        if (!spot) return { ok: false, reason: `수정 대상 "${revise.target}"을(를) 직전 실행 기록에서 찾지 못했습니다.` };
+        if (spot.kind === "dispatch") {
+          run.status = "running"; sync();
+          await runOneDispatch(run, spot.dIdx, signal, sync, revise.instruction);
+        } else if (spot.kind === "leaf") {
+          run.status = "running"; sync();
+          const d = run.dispatches[spot.dIdx];
+          const agentId = d.leafSteps[spot.lIdx].agentId;
+          d.leafSteps[spot.lIdx] = { ...d.leafSteps[spot.lIdx], status: "running" }; sync();
+          try {
+            const leafMessages = [{ role: "user", content: `[${nameFor(d.agent)} 위임 사항]\n${d.instruction}\n\n[수정 지시 — 아래 내용을 반영해 산출물을 다시 작성]\n${revise.instruction}` }];
+            const leafPrompt = systemPromptFor(agentId) + CHIEF_DISPATCH_SUFFIX;
+            let reply = await chiefLimit(() => callApi(leafPrompt, leafMessages, undefined, { signal, max_tokens: LEAF_MAX_TOKENS }));
+            reply = await resolveLeafSideEffects(agentId, leafPrompt, leafMessages, reply);
+            d.leafSteps[spot.lIdx] = { agentId, status: "done", summary: summarizeReply(reply), text: reply };
+            const spliced = spliceLeafText(d.resultText, agentId, reply);
+            if (spliced !== null) {
+              d.resultText = spliced;   // DM 재호출 없이 조각만 교체(설계 2절)
+            } else {
+              // 폴백 — DM이 리프 원문을 헤딩 그대로 담지 않은 경우에만 취합을 1회 다시 호출한다.
+              const isDM = !!DM_AGENTS_CONFIG[d.agent];
+              const dmPrompt = systemPromptFor(d.agent) + (isDM ? CHIEF_DM_SUFFIX : CHIEF_DISPATCH_SUFFIX);
+              const bundle = d.leafSteps.filter(x => x.text).map(x => `### ${codeFor(x.agentId)} ${nameFor(x.agentId)}\n${clipForRelay(x.text)}`).join("\n\n");
+              const dmMessages = [{ role: "user", content: `[chief-coordinator 요청]\n${JSON.stringify(buildReqJson(run))}\n\n[지시 내용]\n${d.instruction}` }];
+              const followUp = `[리프 산출물]\n${bundle}\n\n위 리프 산출물을 도메인 계획 상세로 취합하되, 각 산출물 본문을 요약하지 말고 원문 그대로 포함해 응답하십시오. 추가 위임(ROUTE) 없이 취합 결과와 필요 시 escalations 블록만 응답합니다.`;
+              const recompiled = await chiefLimit(() => callApi(dmPrompt, [...dmMessages, { role: "user", content: followUp }], undefined, { signal, max_tokens: DM_MAX_TOKENS }));
+              d.escalations = parseEscalationsBlock(recompiled);
+              d.resultText = stripEscalationsBlock(stripRouteBlock(recompiled));
+            }
+            d.status = "done";
+          } catch (err) {
+            if (err && err.name === "AbortError") return { ok: false, reason: "중단되었습니다." };
+            d.leafSteps[spot.lIdx] = { agentId, status: "error", summary: err.message, text: "" };
+          }
+          sync();
+        }
+        run.revisions = [...(run.revisions || []), { at: new Date().toISOString(), target: revise.target, instruction: revise.instruction }];
+        return { ok: true, needSummary: spot.kind === "summary" || revise.refresh_summary !== false };
+      };
+
+      // ── 확정 게이트 (설계 4절) ──────────────────────────────────────
+      // 확정은 "그 시점의 조립 결과와 dispatch 전체를 깊은 복사해 동결"하는 일이다.
+      // 이 스냅샷이 이후 문서 번들의 유일한 입력이므로, 채팅 텍스트가 뒤에 어떻게 바뀌든
+      // 확정된 문서 내용은 흔들리지 않는다(설계 원칙 1의 구조적 보장).
+      const confirmChiefRun = (runId) => {
+        setChiefRuns(prev => {
+          const run = prev[runId];
+          if (!run || !run.reportSkeleton) return prev;
+          const next = JSON.parse(JSON.stringify(run));
+          next.confirmed = {
+            at: new Date().toISOString(),
+            seq: ((run.confirmed && run.confirmed.seq) || 0) + 1,
+            reportText: renderReport(run),
+            dispatches: JSON.parse(JSON.stringify(run.dispatches || [])),
+          };
+          next.stage = "confirmed";
+          return { ...prev, [runId]: next };
+        });
+      };
+
+      // 확정 해제 — 이전 확정 스냅샷은 증빙으로 남기고 편집 잠금만 푼다.
+      // 다음 확정에서 seq+1로 새 차수가 열린다.
+      const reopenChiefRun = (runId) => {
+        setChiefRuns(prev => {
+          const run = prev[runId];
+          if (!run) return prev;
+          return { ...prev, [runId]: { ...JSON.parse(JSON.stringify(run)), stage: "drafted" } };
+        });
+      };
+
+      // ── REVISE 실행 본체 ────────────────────────────────────────────
+      // 채팅 경로(sendChiefMessage)와 확정 후 승인 버튼(approveGatedRevise)이 공유한다.
+      const executeRevise = async (targetRunId, reviseMeta, signal) => {
+        const src = chiefRuns[targetRunId];
+        if (!src) return;
+        const run = JSON.parse(JSON.stringify(src));
+        run.stage = "drafted";   // 수정에 들어가면 편집 잠금을 푼다(확정 스냅샷 자체는 보존)
+        const sync = () => setChiefRuns(prev => ({ ...prev, [targetRunId]: JSON.parse(JSON.stringify(run)) }));
+        setChiefMsgs(prev => [...prev, { role: "assistant", kind: "execution", runId: targetRunId, content: "" }]);
+        try {
+          const res = await runReviseCycle(run, reviseMeta, signal, sync);
+          if (chiefCancelRef.current) {
+            run.status = "cancelled"; sync();
+            setChiefMsgs(prev => [...prev, { role: "assistant", content: "부분 수정을 중단했습니다." }]);
+            return;
+          }
+          if (!res.ok) {
+            run.status = "done"; sync();
+            setChiefMsgs(prev => [...prev, { role: "assistant", content: res.reason + "\n\n전체를 다시 만들려면 원래 지시를 다시 내려 주세요." }]);
+            return;
+          }
+          if (res.needSummary) {
+            // 요약 조각만 다시 쓴다 — 도메인 상세는 갱신된 resultText에서 재조립된다.
+            run.status = "compiling"; sync();
+            const reviseAggregate = buildChiefAggregate(run)
+              + `\n\n### 부분 수정 지시 — 시스템 자동 주입\n대상: ${reviseMeta.target}\n${reviseMeta.instruction}\n\n위 수정이 반영된 집계 결과로 통합 문서 뼈대를 다시 작성하십시오. 새 DISPATCH·REVISE 블록은 내지 마십시오.`;
+            const stream2 = makeStreamHandler(setChiefMsgs, { runId: targetRunId, kind: "report" });
+            let revised = await requestApi([
+              { role: "system", content: buildChiefSystemPrompt() },
+              { role: "user", content: run.userText || "" },
+              { role: "assistant", content: run.announce || "" },
+              { role: "user", content: reviseAggregate },
+            ], 0.3, { onChunk: stream2.onChunk, signal, max_tokens: CHIEF_COMPILE_MAX_TOKENS });
+            revised = stripReviseBlock(stripDispatchBlock(revised));
+            run.reportSkeleton = revised;
+            stream2.finalize(renderReport(run));
+          } else {
+            setChiefMsgs(prev => [...prev, { role: "assistant", kind: "report", runId: targetRunId, content: renderReport(run) }]);
+          }
+          run.status = "done"; sync();
+        } catch (err) {
+          const aborted = (err && err.name === "AbortError") || chiefCancelRef.current;
+          run.status = aborted ? "cancelled" : "error"; sync();
+          setChiefMsgs(prev => [...clearStreamingFlags(prev),
+            { role: "assistant", content: aborted ? "부분 수정을 중단했습니다." : "부분 수정 중 오류가 발생했습니다.\n\n" + err.message }]);
+        }
+      };
+
+      // 확정본에 대한 수정 요청은 게이트 메시지의 버튼으로만 진행된다(설계 3.5).
+      const markGate = (gateId, gateStatus) =>
+        setChiefMsgs(prev => prev.map(m => (m.gateId === gateId ? { ...m, gateStatus } : m)));
+
+      const approveGatedRevise = async (msg) => {
+        if (chiefLoading) return;
+        markGate(msg.gateId, "approved");
+        setChiefLoading(true);
+        chiefCancelRef.current = false;
+        const controller = new AbortController();
+        chiefAbortRef.current = controller;
+        try {
+          await executeRevise(msg.runId, msg.revise, controller.signal);
+        } finally {
+          chiefAbortRef.current = null;
+          setChiefLoading(false);
+        }
+      };
+
+      const dismissGatedRevise = (msg) => {
+        markGate(msg.gateId, "cancelled");
+        setChiefMsgs(prev => [...prev, { role: "assistant", content: "수정을 취소했습니다. 확정본은 그대로 유지됩니다." }]);
+      };
+
       const cancelChiefRun = () => {
         chiefCancelRef.current = true;
         if (chiefAbortRef.current) chiefAbortRef.current.abort();
@@ -5602,18 +5999,52 @@ ${FILE_DOWNLOAD_RULE}
           const firstReply = await requestApi(
             [{ role: "system", content: buildChiefSystemPrompt() }, ...chiefApiHistory(baseMsgs)],
             0.3, { onChunk: stream.onChunk, signal });
+          // ①-a 부분 수정(REVISE) — 전체 재실행보다 먼저 확인한다(R-2). 조각만 갈아끼우고 끝낸다.
+          const reviseMeta = parseReviseBlock(firstReply);
+          if (reviseMeta) {
+            const doneIds = Object.keys(chiefRuns).filter(id => (chiefRuns[id] || {}).reportSkeleton).sort();
+            const targetRunId = (reviseMeta.runId && chiefRuns[reviseMeta.runId]) ? reviseMeta.runId : doneIds[doneIds.length - 1];
+            if (!targetRunId) {
+              stream.finalize(guardPlaceholder(stripReviseBlock(firstReply)) + "\n\n(수정할 직전 계획서·보고서가 없습니다. 먼저 계획 수립을 지시해 주세요.)");
+              return;
+            }
+            stream.finalize(guardPlaceholder(stripReviseBlock(firstReply)) || "요청하신 부분만 다시 만들겠습니다.");
+
+            // 설계 3.5 — 확정본에 대한 수정은 즉시 적용하지 않는다. 차수가 올라가고
+            // 이전 차수로 만든 실행 문서와 내용이 갈라지므로 최고관리자 확인을 받는다.
+            const targetRun = chiefRuns[targetRunId];
+            if (targetRun.stage === "confirmed") {
+              const seq = (targetRun.confirmed && targetRun.confirmed.seq) || 1;
+              setChiefMsgs(prev => [...prev, {
+                role: "assistant", kind: "revise-gate", runId: targetRunId,
+                gateId: "gate_" + Date.now(), revise: reviseMeta,
+                content: `${seq}차 확정본이 이미 있습니다. 수정하면 ${seq + 1}차 확정본이 되고, ${seq}차로 만든 실행 문서와는 내용이 달라집니다.`,
+              }]);
+              return;
+            }
+            await executeRevise(targetRunId, reviseMeta, signal);
+            return;
+          }
+
           const dispatchMeta = parseDispatchBlock(firstReply);
-          if (!dispatchMeta) { stream.finalize(firstReply); return; } // 위임 불필요 — 일반 답변
+          if (!dispatchMeta) { stream.finalize(guardPlaceholder(firstReply)); return; } // 위임 불필요 — 일반 답변(R-3)
           const announce = stripDispatchBlock(firstReply) || "관련 도메인 에이전트에 조회를 시작합니다.";
           stream.finalize(announce);
 
           // ② run 등록 + 진행 패널 앵커 메시지
           const runId = "run_" + Date.now();
           const run = {
+            id: runId,                     // R-1 — 보고서 메시지가 run을 되짚는 유일한 열쇠
             status: "running",
             scope: dispatchMeta.scope, target_period: dispatchMeta.target_period, event_name: dispatchMeta.event_name,
             self_tasks: dispatchMeta.self_tasks,
             startedAt: new Date().toISOString(),
+            userText,                      // 부분 재생성 시 2차 턴 대화를 재구성하는 데 필요
+            announce,
+            reportSkeleton: "",            // chief 2차 턴 원문(도메인 상세 주입 전) — 표시본의 원본 조각
+            stage: "drafted",              // "drafted" | "confirmed" — 확정 게이트(설계 4절)
+            confirmed: null,               // { at, seq, reportText, dispatches } — 확정 시점 동결 스냅샷
+            revisions: [],                 // REVISE 이력 [{at, target, instruction}]
             dispatches: dispatchMeta.targets.map(t => ({
               agent: t.agent, instruction: t.instruction,
               status: "pending", resultText: "", escalations: [], leafSteps: [],
@@ -5625,47 +6056,8 @@ ${FILE_DOWNLOAD_RULE}
           setChiefMsgs(prev => [...prev, { role: "assistant", kind: "execution", runId, content: "" }]);
 
           // ③ 디스패치 실행 — 레버4: 제한적 병렬(전역 chiefLimit로 총 in-flight ≤3, 429 안전).
-          //    오류 난 대상만 error로 표기하고 나머지는 계속 진행.
-          const reqJson = {
-            requester_agent: "chief-coordinator",
-            request_type: run.scope === "event" ? "event_result_request" : "plan_request",
-            scope: run.scope,
-            ...(run.target_period ? { target_period: run.target_period } : {}),
-            ...(run.event_name ? { event_name: run.event_name } : {}),
-          };
-          const runOneDispatch = async (d, i) => {
-            if (chiefCancelRef.current) return;
-            d.status = "running"; sync();
-            const dmMessages = [{ role: "user", content: `[chief-coordinator 요청]\n${JSON.stringify(reqJson)}\n\n[지시 내용]\n${d.instruction}` }];
-            try {
-              // DM은 라우터 접미사(리프 실제 호출 강제), A-03 등 비-DM은 산출물 접미사를 붙인다.
-              const isDM = !!DM_AGENTS_CONFIG[d.agent];
-              const dmPrompt = systemPromptFor(d.agent) + (isDM ? CHIEF_DM_SUFFIX : CHIEF_DISPATCH_SUFFIX);
-              let reply = await chiefLimit(() => callApi(dmPrompt, dmMessages, undefined, { signal, max_tokens: DM_MAX_TOKENS }));
-              reply = await resolveLeafSideEffects(d.agent, dmPrompt, dmMessages, reply);
-              // DM이 리프 위임(ROUTE)을 냈다면 리프까지 실행 후 결과를 DM에 되돌려 취합을 받는다.
-              // 디스패치당 ROUTE 1라운드 상한 — DM 2차 응답의 재-ROUTE는 무시(strip)한다.
-              const route = isDM ? parseRouteBlock(reply) : null;
-              if (route) {
-                const leafResults = await runChiefLeafChain(run, i, route, d.instruction, signal, sync);
-                if (leafResults === null) return; // 취소됨
-                if (leafResults.length) {
-                  const followUp = `[리프 산출물]\n${leafResults.map(r => `### ${codeFor(r.targetId)} ${nameFor(r.targetId)}\n${clipForRelay(r.reply)}`).join("\n\n")}\n\n위 리프 산출물을 도메인 계획 상세로 취합하되, 각 산출물 본문을 요약하지 말고 원문 그대로 포함해 응답하십시오. 추가 위임(ROUTE) 없이 취합 결과와 필요 시 escalations 블록만 응답합니다.`;
-                  reply = await chiefLimit(() => callApi(dmPrompt, [...dmMessages, { role: "assistant", content: stripRouteBlock(reply) }, { role: "user", content: followUp }], undefined, { signal, max_tokens: DM_MAX_TOKENS }));
-                }
-                reply = stripRouteBlock(reply);
-              }
-              d.escalations = parseEscalationsBlock(reply);
-              d.resultText = stripEscalationsBlock(reply);
-              d.status = "done";
-            } catch (err) {
-              if (err && err.name === "AbortError") return;
-              d.status = "error";
-              d.resultText = "수집 실패: " + err.message;
-            }
-            sync();
-          };
-          await Promise.all(run.dispatches.map((d, i) => runOneDispatch(d, i)));
+          //    오류 난 대상만 error로 표기하고 나머지는 계속 진행. 실행 본체는 REVISE 경로와 공유한다.
+          await Promise.all(run.dispatches.map((d, i) => runOneDispatch(run, i, signal, sync)));
 
           if (chiefCancelRef.current) {
             run.status = "cancelled"; sync();
@@ -5675,18 +6067,7 @@ ${FILE_DOWNLOAD_RULE}
 
           // ④ 집계 주입 (UI에서는 접힌 형태로 렌더, API 이력에는 포함)
           run.status = "compiling"; sync();
-          const allEscalations = run.dispatches.flatMap(d => d.escalations.map(e => ({ ...e, source_dm: codeFor(d.agent) })));
-          const aggregate = [
-            "[집계 결과 — 시스템 자동 주입]",
-            `※ 아래 각 DM 본문은 총괄 요약 작성용 앞부분 발췌입니다. 산출물 원문 전체는 시스템이 최종 문서의 ${DOMAIN_DETAIL_PLACEHOLDER} 자리에 자동 삽입하므로, 도메인별 상세 본문을 다시 옮겨 적지 마십시오.`,
-            ...run.dispatches.map(d => {
-              const body = (d.resultText || "(응답 없음)");
-              const clipped = body.length > CHIEF_RESULT_CHAR_LIMIT ? body.slice(0, CHIEF_RESULT_CHAR_LIMIT) + "\n…(요약 작성용 발췌 — 이하 생략, 원문은 시스템이 문서에 삽입)" : body;
-              return `### ${codeFor(d.agent)} ${nameFor(d.agent)} (${d.status === "done" ? "완료" : "수집 실패"})\n${clipped}`;
-            }),
-            `### escalations 취합\n${allEscalations.length ? JSON.stringify(allEscalations, null, 1) : "(없음)"}`,
-            `### chief 직접 담당 업무\n${run.self_tasks.length ? run.self_tasks.map(s => `- ${s}`).join("\n") : "(없음)"}`,
-          ].join("\n\n");
+          const aggregate = buildChiefAggregate(run);
           setChiefMsgs(prev => [...prev, { role: "user", kind: "aggregate", content: aggregate }]);
 
           // ⑤ chief 2차 턴 — 통합 문서 작성 (스트리밍)
@@ -5695,15 +6076,16 @@ ${FILE_DOWNLOAD_RULE}
             { role: "assistant", content: announce },
             { role: "user", content: aggregate },
           ];
-          const stream2 = makeStreamHandler(setChiefMsgs);
+          const stream2 = makeStreamHandler(setChiefMsgs, { runId, kind: "report" });  // R-1 — 보고서 메시지에 runId를 남긴다
           let finalReply = await requestApi(
             [{ role: "system", content: buildChiefSystemPrompt() }, ...convo],
             0.3, { onChunk: stream2.onChunk, signal, max_tokens: CHIEF_COMPILE_MAX_TOKENS });
           if (DISPATCH_BLOCK_RE.test(finalReply)) {
             finalReply = stripDispatchBlock(finalReply) + "\n\n(추가 위임이 필요하면 새 지시로 요청해 주세요.)";
           }
-          finalReply = injectDomainDetail(finalReply, buildDomainDetailBody(run));
-          stream2.finalize(finalReply);
+          if (REVISE_BLOCK_RE.test(finalReply)) finalReply = stripReviseBlock(finalReply);
+          run.reportSkeleton = finalReply;             // 조각 보존 — 화면 보고서는 매번 여기서 재조립된다
+          stream2.finalize(renderReport(run));
           run.status = "done"; sync();
         } catch (err) {
           const aborted = (err && err.name === "AbortError") || chiefCancelRef.current;
@@ -6174,7 +6556,15 @@ ${FILE_DOWNLOAD_RULE}
       };
 
       // 어시스턴트 응답의 확인필요 미니 노트를 경고색 카드로, 나머지 본문을 마크다운으로 렌더
-      const renderChiefAssistant = (msg) => {
+      // 한 run에 보고서 메시지가 여러 개 쌓일 수 있다(부분 수정마다 1건). 확정·수정 컨트롤과
+      // 동결 렌더는 그 run의 **최신** 보고서에만 붙인다 — 과거 보고서는 그대로 이력으로 남는다.
+      const latestReportIdxByRun = (() => {
+        const map = {};
+        chiefMsgs.forEach((m, idx) => { if (m.kind === "report" && m.runId) map[m.runId] = idx; });
+        return map;
+      })();
+
+      const renderChiefAssistant = (msg, isLatestReport) => {
         const { notes, body } = splitConfirmNotes(msg.content || "");
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -6187,7 +6577,11 @@ ${FILE_DOWNLOAD_RULE}
             {(body || msg.streaming) && (
               <div style={{ fontSize: "14px", lineHeight: "1.75", color: "var(--ink)", minWidth: 0 }}>
                 {!msg.streaming && body.includes("===보고서시작===")
-                  ? <ReportDocument content={body} />
+                  ? <ReportDocument
+                      content={body}
+                      run={isLatestReport && msg.runId ? chiefRuns[msg.runId] : null}
+                      onConfirm={isLatestReport && msg.runId ? () => confirmChiefRun(msg.runId) : null}
+                      onReopen={isLatestReport && msg.runId ? () => reopenChiefRun(msg.runId) : null} />
                   : <MarkdownRenderer text={body} />}
                 {msg.streaming && <span className="stream-cursor">▊</span>}
               </div>
@@ -6236,6 +6630,32 @@ ${FILE_DOWNLOAD_RULE}
                       </details>
                     );
                   }
+                  if (msg.kind === "revise-gate") {
+                    const done = !!msg.gateStatus;
+                    return (
+                      <div key={i} style={{ border: "1px solid var(--warn)", background: "var(--warn-tint)", borderRadius: "10px", padding: "12px 14px" }}>
+                        <div style={{ fontSize: "11.5px", fontWeight: "800", color: "var(--warn)", marginBottom: "6px", letterSpacing: "0.3px" }}>🔒 확정본 수정 확인</div>
+                        <div style={{ fontSize: "13px", lineHeight: "1.7", color: "var(--ink)" }}>{msg.content}</div>
+                        <div style={{ fontSize: "12px", lineHeight: "1.7", color: "var(--muted)", marginTop: "5px" }}>
+                          수정 대상: <b>{msg.revise ? msg.revise.target : "-"}</b>{msg.revise && msg.revise.instruction ? ` · ${msg.revise.instruction}` : ""}
+                        </div>
+                        {done ? (
+                          <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "9px" }}>
+                            {msg.gateStatus === "approved" ? "→ 수정을 진행했습니다." : "→ 취소했습니다. 확정본 유지."}
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", gap: "7px", marginTop: "10px" }}>
+                            <button onClick={() => approveGatedRevise(msg)} disabled={chiefLoading}
+                              style={{ padding: "5px 12px", border: "1px solid var(--warn)", borderRadius: "6px", background: "var(--warn)", color: "white", fontSize: "12px", fontWeight: "700", fontFamily: "inherit", cursor: chiefLoading ? "not-allowed" : "pointer" }}
+                            >차수 올려 수정 진행</button>
+                            <button onClick={() => dismissGatedRevise(msg)} disabled={chiefLoading}
+                              style={{ padding: "5px 12px", border: "1px solid var(--line-strong)", borderRadius: "6px", background: "white", color: "var(--chrome)", fontSize: "12px", fontWeight: "700", fontFamily: "inherit", cursor: chiefLoading ? "not-allowed" : "pointer" }}
+                            >취소 — 확정본 유지</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
                   if (msg.role === "user") {
                     return (
                       <div key={i} style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -6246,7 +6666,7 @@ ${FILE_DOWNLOAD_RULE}
                   return (
                     <div key={i} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
                       <span className="code-chip is-active" style={{ flexShrink: 0, marginTop: "3px" }}>CC</span>
-                      <div style={{ flex: 1, minWidth: 0 }}>{renderChiefAssistant(msg)}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>{renderChiefAssistant(msg, latestReportIdxByRun[msg.runId] === i)}</div>
                     </div>
                   );
                 })}
