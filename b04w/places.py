@@ -11,8 +11,10 @@ DB `public.books`에도 열이 없으며, data.go.kr BookInformationService는 �
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -61,12 +63,19 @@ def normalize(place: str) -> str:
     text = (place or "").strip()
     if not text:
         return ""
-    match = re.search(r"([가-힣]{2,4})\s*(?:특별자치시|특별자치도|특별시|광역시|시|군)\b", text)
-    if match:
-        return match.group(1)
-    token = text.split()[-1]
-    token = re.sub(r"(특별자치시|특별자치도|특별시|광역시|시|군)$", "", token)
-    return token if 2 <= len(token) <= 4 and re.fullmatch(r"[가-힣]+", token) else ""
+    # 토큰 단위로 앞에서부터 시·군을 찾는다. 정규식 한 방으로 잡으면 탐욕 매칭 때문에
+    # "서울특별시" → "서울특별"이 되고, "전북특별자치도 전주시"에서는 도 이름("전북")이
+    # 시 이름보다 먼저 잡힌다(2026-09-09 실측).
+    for token in text.split():
+        for suffix in ("특별자치시", "특별시", "광역시", "시", "군"):
+            if token.endswith(suffix) and not token.endswith("자치도"):
+                head = token[: -len(suffix)]
+                if 2 <= len(head) <= 4 and re.fullmatch(r"[가-힣]+", head):
+                    return head
+    # 이미 "서울"·"파주"처럼 시·군 이름만 온 경우(LLM의 place 필드)는 그대로 쓴다
+    if 2 <= len(text) <= 4 and re.fullmatch(r"[가-힣]+", text) and not text.endswith("도"):
+        return text
+    return ""
 
 
 def _ask(question: str, model: str, timeout: int) -> tuple[dict, float]:
@@ -106,6 +115,48 @@ def _ask(question: str, model: str, timeout: int) -> tuple[dict, float]:
     return json.loads(text), cost
 
 
+def naver_local(name: str, timeout: int = 15) -> tuple[str, str, str]:
+    """네이버 지역검색에서 상호가 정확히 일치하고 **업종이 출판사**인 항목을 찾는다.
+
+    LLM 웹검색은 소규모 출판사를 못 찾는다(2026-09-04 배치에서 27곳 전멸). 지역검색은
+    사업장 등록 정보라 이런 곳도 잡히는데, 대신 같은 상호의 학원·카페가 섞여 나오므로
+    **업종(category)까지 출판이어야** 채택한다. 그렇게 걸러 11곳을 확인했다.
+
+    반환: (발행지, 주소, 근거) — 확인 못 하면 ("", "", "").
+    """
+    client = os.environ.get("NAVER_CLIENT_ID", "")
+    secret = os.environ.get("NAVER_CLIENT_SECRET", "")
+    if not (client and secret and name.strip()):
+        return "", "", ""
+    base = re.sub(r"\(.*?\)", "", name).strip()
+    target = re.sub(r"[\s()]|도서출판|주식회사|\(주\)", "", base)
+    hits: dict[str, tuple[str, str, str]] = {}
+    for query in (base, f"도서출판 {base}"):
+        url = "https://openapi.naver.com/v1/search/local.json?" + urllib.parse.urlencode(
+            {"query": query, "display": 5}
+        )
+        request = urllib.request.Request(
+            url, headers={"X-Naver-Client-Id": client, "X-Naver-Client-Secret": secret}
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                items = json.loads(response.read().decode("utf-8")).get("items", [])
+        except Exception:
+            continue
+        for item in items:
+            title = re.sub(r"<[^>]+>", "", item.get("title", ""))
+            category = item.get("category", "")
+            address = item.get("roadAddress") or item.get("address") or ""
+            if "출판" not in category and "도서" not in category:
+                continue
+            if re.sub(r"[\s()]|도서출판|주식회사|\(주\)", "", title) != target:
+                continue
+            hits[address] = (normalize(address), address, f"네이버 지역검색 — 상호 일치, 업종 '{category}'")
+    if len(hits) == 1:                      # 주소가 둘 이상이면 어느 쪽인지 알 수 없다
+        return next(iter(hits.values()))
+    return "", "", ""
+
+
 def resolve(publisher: str, *, store: dict, model: str = DEFAULT_MODEL,
             hint: str = "", timeout: int = 240) -> tuple[str, float]:
     """출판사 소재지를 돌려준다. 표에 있으면 조회하지 않는다. (발행지, 비용)"""
@@ -119,6 +170,14 @@ def resolve(publisher: str, *, store: dict, model: str = DEFAULT_MODEL,
 
     total = 0.0
     place, data = "", {}
+
+    place, address, evidence = naver_local(name)   # 무료·구조화된 경로를 먼저 쓴다
+    if place:
+        with _lock:
+            places[name] = place
+            store.setdefault("_근거", {})[name] = {"address": address, "evidence": evidence}
+        return place, 0.0
+
     for query in QUERIES:
         data, cost = _ask(query.format(name=name, hint=hint or name), model, timeout)
         total += cost
