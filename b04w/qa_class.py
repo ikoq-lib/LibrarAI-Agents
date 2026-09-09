@@ -104,8 +104,10 @@ def check(row: dict, cls: dict, table: dict, batch: list[dict]) -> list[tuple[st
         if expect and not (kdc.startswith(expect) or (expect == "859" and kdc.startswith("859"))):
             out.append(("FAIL", f"문학 언어 불일치: 원작 {lang_ko} → {expect}xx인데 {kdc}"))
         add = add_code(row.get("ISBN", ""))
-        if ".8" in kdc and add[:1] == "0":
-            out.append(("FAIL", f"{kdc}(.8=아동·유아)인데 부가기호 첫 자리 0(성인)"))
+        # .8=동화는 소설 요목(813·833처럼 X3)의 형식구분일 때만이다. 859.81은 덴마크문학,
+        # 859.3은 네덜란드문학처럼 언어 세분이라 대상독자와 무관하다(2026-09-09 오탐 2건).
+        if re.fullmatch(r"8\d3\.8\d*", kdc) and add[:1] == "0":
+            out.append(("FAIL", f"{kdc}(.8=동화, 아동·유아용)인데 부가기호 첫 자리 0(성인)"))
         if cls2 == "84" and "." in kdc:
             out.append(("FAIL", f"성인 외국소설 무세분 관행 위반({kdc}) — 자관은 843"))
         if kdc == "833.7" and "강담" not in (cls.get("kdc_rationale") or ""):

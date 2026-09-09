@@ -14,3 +14,4 @@
 - [KDC 004.73 — AI 도구 활용 실용서](kdc_004_73_ai_tool_usage_guides.md) — "챗GPT/커서로 OO 만들기·수익화"는 결과물 무관 004.73, 005.58은 비-AI 앱제작툴 전용
 - [자관 분포 0건 단정 금지](feedback_no_zero_without_query.md) — 그 세목을 직접 쿼리하지 않고 "0건"이라 적으면 안 됨, 005.53 재작업 사례
 - ["없는 번호" 단정 금지](feedback_no_false_absence_claim.md) — 191.16·327.856을 없다고 주장했으나 본표에 실재, 부재 주장 전 발췌에서 직접 확인
+- [도치형 성 한 글자 저자기호](feedback_one_syllable_surname.md) — 길, 안자나 → 길62소. 성이 한 글자면 이름 첫 글자를 둘째 글자로

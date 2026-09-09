@@ -99,12 +99,17 @@ def syllable_digits(ch: str) -> str:
     return CONSONANT[cho] + table[jung]
 
 
-def strip_roles(raw: str) -> str:
-    """'정지아 지음', '지은이: 정지아' 같은 표기에서 이름만 남긴다."""
+def strip_roles(raw: str, *, keep_comma: bool = False) -> str:
+    """'정지아 지음', '지은이: 정지아' 같은 표기에서 이름만 남긴다.
+
+    쉼표는 두 가지로 쓰인다 — 공저자 구분("김철수, 이영희")과 외국인명 도치형
+    ("길, 안자나"). 기본은 앞사람만 남기고, `keep_comma` 면 쉼표를 이름의 일부로 둔다.
+    """
     name = raw.strip()
     if ":" in name:
         name = name.split(":", 1)[1]
-    for sep in (";", "/", ",", "·", "、"):
+    separators = (";", "/", "·", "、") if keep_comma else (";", "/", ",", "·", "、")
+    for sep in separators:
         if sep in name:
             name = name.split(sep)[0]
     for word in sorted(ROLE_WORDS, key=len, reverse=True):
@@ -125,6 +130,15 @@ def author_mark(base_name: str, title_proper: str) -> AuthorMark:
     """
     name = strip_roles(base_name)
     chars = hangul_chars(name)
+    notes: list[str] = []
+    if len(chars) == 1:
+        # 도치형 외국인명의 성이 한 글자인 경우("길, 안자나") 쉼표에서 잘라 내면 성만 남는다.
+        # 이때는 이름 첫 글자를 둘째 글자로 쓴다 — 길 + 안(62) + 소 = 길62소.
+        joined = strip_roles(base_name, keep_comma=True)
+        joined_chars = hangul_chars(joined)
+        if len(joined_chars) >= 2:
+            name, chars = joined, joined_chars
+            notes.append("성이 한 글자여서 이름 첫 글자를 둘째 글자로 사용")
     if len(chars) == 0:
         raise AuthorMarkError(
             f"저자명 '{base_name}'에 한글 음절이 없습니다. 한글 음역 표기가 필요합니다."
@@ -157,7 +171,8 @@ def author_mark(base_name: str, title_proper: str) -> AuthorMark:
         second_char=second,
         digits=digits,
         work_char=work,
-        derivation=derivation,
+        derivation=derivation + (f" [{notes[0]}]" if notes else ""),
+        notes=notes,
     )
 
 

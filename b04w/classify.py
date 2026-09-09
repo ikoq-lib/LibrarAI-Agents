@@ -120,20 +120,43 @@ def kdc_excerpt(hints: list[str], max_lines: int = 150) -> str:
 
     picked: list[str] = []
     seen: set[int] = set()
+
+    def take(start: int, count: int) -> None:
+        for offset in range(count):
+            index = start + offset
+            if index < len(lines) and index not in seen:
+                seen.add(index)
+                picked.append(lines[index])
+
     for hint in hints:
         digits = re.sub(r"[^\d.]", "", hint)
         head = re.sub(r"[^\d]", "", digits)[:3]
         if not head:
             continue
-        pattern = re.compile(rf"^{head}\D")
-        for pos in range(body, len(lines)):
-            if pattern.match(lines[pos]):
-                for offset in range(0, 30):        # 강목 + 세목까지 닿게
-                    index = pos + offset
-                    if index < len(lines) and index not in seen:
-                        seen.add(index)
-                        picked.append(lines[index])
+        # 요구한 번호가 본표에 없으면(예: 028) 그 강목(020)을 보여 준다 — 워커가
+        # 이웃 번호(027 학교도서관·029 독서)를 보고 스스로 고칠 수 있어야 한다.
+        anchors = [head]
+        if head[1:] != "0":
+            anchors.append(head[:2] + "0")
+        found = -1
+        for anchor in anchors:
+            # "325.337"처럼 소수점이 붙은 줄에 걸리면 안 된다 — 강목 표제 줄만 잡는다
+            pattern = re.compile(rf"^{anchor}(?![\d.])")
+            for pos in range(body, len(lines)):
+                if pattern.match(lines[pos]):
+                    found = pos
+                    take(pos, 30)                  # 강목 + 세목까지 닿게
+                    break
+            if found >= 0:
                 break
+        # 세목(예: .571)은 강목에서 30줄 밖에 있을 수 있다. 그 줄만 따로 집어 온다.
+        decimal = digits.split(".")[1] if "." in digits else ""
+        if decimal and found >= 0:
+            sub = re.compile(rf"^\s*\.{decimal}\D")
+            for pos in range(found, min(found + 400, len(lines))):
+                if sub.match(lines[pos]):
+                    take(pos, 3)
+                    break
     return "\n".join(picked[:max_lines]) if picked else "(해당 강목을 본표에서 찾지 못함)"
 
 
