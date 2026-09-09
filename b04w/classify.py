@@ -97,28 +97,42 @@ type 은 개인명 "person", 단체명 "corporate".
 """
 
 
-def kdc_excerpt(hints: list[str], max_lines: int = 90) -> str:
-    """KDC6 본표에서 후보 강목 주변을 발췌한다.
+def kdc_excerpt(hints: list[str], max_lines: int = 150) -> str:
+    """KDC6 **본표**에서 후보 강목과 그 세목을 발췌한다.
 
     PDF는 절대 파싱하지 않는다 — 이미 추출해 둔 텍스트만 쓴다(그 파일 헤더의 경고가
     별법·간략판 한계를 담고 있다).
+
+    앞부분(약 28쪽)은 조기표와 요목표다. 요목표에는 "813 소설"까지만 있고 세목이 없어,
+    거기서 발췌하면 워커가 세목 표목을 확인할 방법이 없다 — 실제로 2026-09-09 WARN 배치에서
+    27건이 "표목 미확인"으로 돌아왔다. 그래서 본표가 시작되는 쪽부터 찾는다.
     """
     if not KDC6_TEXT.exists():
         return "(KDC6_for_learning.txt 없음 — npm run extract:kdc6 으로 생성 필요)"
     lines = KDC6_TEXT.read_text(encoding="utf-8").splitlines()
+
+    body = 0
+    for pos, line in enumerate(lines):
+        marker = re.match(r"-{3,}\s*\[p\.(\d+)\]", line)
+        if marker and int(marker.group(1)) >= 29:   # 29쪽부터 본표
+            body = pos
+            break
+
     picked: list[str] = []
     seen: set[int] = set()
     for hint in hints:
-        head = re.sub(r"[^\d]", "", hint)[:3]
+        digits = re.sub(r"[^\d.]", "", hint)
+        head = re.sub(r"[^\d]", "", digits)[:3]
         if not head:
             continue
         pattern = re.compile(rf"^{head}\D")
-        for pos, line in enumerate(lines):
-            if pattern.match(line):
-                for offset in range(0, 18):
-                    if pos + offset < len(lines) and pos + offset not in seen:
-                        seen.add(pos + offset)
-                        picked.append(lines[pos + offset])
+        for pos in range(body, len(lines)):
+            if pattern.match(lines[pos]):
+                for offset in range(0, 30):        # 강목 + 세목까지 닿게
+                    index = pos + offset
+                    if index < len(lines) and index not in seen:
+                        seen.add(index)
+                        picked.append(lines[index])
                 break
     return "\n".join(picked[:max_lines]) if picked else "(해당 강목을 본표에서 찾지 못함)"
 
