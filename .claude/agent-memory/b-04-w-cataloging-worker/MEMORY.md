@@ -10,3 +10,6 @@
 - [테스트/가상 도서 데이터 처리](feedback_test_dummy_book_handling.md) — "TEST-XXX-" 접두 등 하네스 추적용 문자열은 245에서 제외하고 500에 명기
 - [네이버 책검색 API 종료](feedback_naver_search_book_broken.md) — 2026-09-01 서비스 종료 확인, 서지 보강은 WebSearch로 대체
 - [KDC 370.18 — 교사 대상 아동심리/관계 실용서](kdc_370_teacher_child_psychology.md) — 379·372.61 아닌 370.18(교육심리학), 자관 선례 라68관·코75애 등
+- [KDC 594.019 — 미식/음식문화 교양서](kdc_594_food_culture_essay.md) — 593(화장) 아닌 594.019(미식과 식도락), 자관 55건 실측 근거, 하마다 다케후미 『미식의 교양』 사례
+- [KDC 004.73 — AI 도구 활용 실용서](kdc_004_73_ai_tool_usage_guides.md) — "챗GPT/커서로 OO 만들기·수익화"는 결과물 무관 004.73, 005.58은 비-AI 앱제작툴 전용
+- [자관 분포 0건 단정 금지](feedback_no_zero_without_query.md) — 그 세목을 직접 쿼리하지 않고 "0건"이라 적으면 안 됨, 005.53 재작업 사례
