@@ -40,6 +40,7 @@ class BookInput:
     summary: str = ""
     ctrl_no: str = ""              # 비면 채번
     kdc_hint: str = ""             # 사서가 미리 정한 분류가 있으면
+    rework_note: str = ""          # 하네스 재작업 지시(올바른 표목·번호와 사유)
     ksh: dict[str, str] = field(default_factory=dict)  # 주제명 → KSH 번호(사서 제공분만)
     sources: dict[str, str] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)

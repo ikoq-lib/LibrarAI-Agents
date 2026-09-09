@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 import threading
 import time
@@ -263,7 +264,12 @@ def phase_classify(books: list[BookInput], practice: Practice, workers: int, mod
         hint = book.kdc_hint or web.get("kdc_guess") or ""
         if web.get("kdc_guess"):
             book.kdc_hint = str(web["kdc_guess"])
-        practice_text = practice.text(web.get("kdc_guess") or book.kdc_hint or hint)
+        # 재작업 건은 하네스가 권고한 번호의 자관 분포를 보여 준다 — 반려된 옛 번호의
+        # 분포를 보여 주면 틀린 강목 안에서 다시 고르게 된다.
+        recommended = re.search(r"권고:\s*([\d.]+)", book.rework_note or "")
+        practice_text = practice.text(
+            recommended.group(1) if recommended else (web.get("kdc_guess") or book.kdc_hint or hint)
+        )
 
         def produce():
             cls = classify_mod.classify(

@@ -6,3 +6,4 @@
 - [반복 QA 실패 3종](feedback_qa_recurring_failures.md) — 008 말미공백·발행지 추정·300 크기, 배치 전건 실측으로만 잡힌다
 - [워커 인용 검증](feedback_worker_citation_check.md) — 레코드 인용은 실재하나 "첫 소장"·"N건" 류 집계 주장은 5/8 틀림, 분류 결정을 오도한 사례도 있음
 - [2026-09-04 4차 정기도서 배치(301건) QA](project_test_batch_20260904.md) — 표기규칙 결함 0건(재발 없음), 총서 계승·분류 오독 신규 결함 5건 발견
+- [2026-09-09 오분류 88건 재위임](project_rework_20260909.md) — FN-03.1 본표 대조로 9건 적발, 하네스 권고(028)도 틀렸음, qa_class.py·kdc_table.py 도입
