@@ -1,0 +1,1126 @@
+{
+ "_주석": [
+  "출판사 → 발행지 사전. 260 $a를 추정으로 채우지 않기 위한 자관 관리 표다.",
+  "시드 값은 References/NL KORMARC 실물 MARC 52건의 260 $a/$b 쌍에서 추출했다(2026-08-26 파싱분).",
+  "여기 없는 출판사는 [발행지불명] + needs_info로 처리된다 — 추정 기재는 하지 않는다.",
+  "사서가 자료 실물이나 웹검색으로 확인한 값을 여기에 추가하면 다음 배치부터 자동 적용된다.",
+  "b04w.py --learn-place '출판사=발행지' 로도 추가할 수 있다."
+ ],
+ "places": {
+  "가치창조": "고양",
+  "교유당": "파주",
+  "교유서가": "파주",
+  "그린비": "서울",
+  "나무말미": "서울",
+  "다산3.0": "파주",
+  "다산북스": "파주",
+  "단비어린이": "고양",
+  "디플롯": "파주",
+  "루미너스": "고양",
+  "문지사": "서울",
+  "문학과지성사": "서울",
+  "문학동네": "파주",
+  "문학수첩": "파주",
+  "반비": "서울",
+  "시용출판사": "서울",
+  "아작": "서울",
+  "어센딩": "천안",
+  "열림원": "파주",
+  "예문": "서울",
+  "은하수미디어": "서울",
+  "잉크잼": "서울",
+  "지양사": "서울",
+  "지양어린이": "서울",
+  "진선아이": "서울",
+  "진선출판사": "서울",
+  "책세상": "서울",
+  "책읽는곰": "서울",
+  "천개의바람": "서울",
+  "청어람미디어": "서울",
+  "파란정원": "서울",
+  "한국학술정보": "파주",
+  "해누리": "서울",
+  "책과함께": "서울",
+  "골든래빗(주)": "서울",
+  "길벗": "서울",
+  "디자인하우스": "서울",
+  "까치": "서울",
+  "나무의마음": "파주",
+  "FIKA(피카)": "서울",
+  "글항아리": "파주",
+  "김영사": "파주",
+  "구름이머무는동안": "서울",
+  "arte(아르테)": "서울",
+  "눌와": "서울",
+  "군자출판사(교재)": "파주",
+  "가톨릭출판사": "서울",
+  "갈매나무": "서울",
+  "갈마바람": "서울",
+  "21세기북스": "파주",
+  "다람": "서울",
+  "대원씨아이(단행본)": "서울",
+  "담앤북스": "음성",
+  "다산초당": "파주",
+  "더베이스": "인천",
+  "넥서스Friends": "파주",
+  "더페이지": "고양",
+  "다반": "수원",
+  "다산책방": "파주",
+  "동녘": "파주",
+  "동양북스(동양문고)": "서울",
+  "돌베개": "파주",
+  "뜨인돌": "서울",
+  "리드비": "인천",
+  "두란노": "서울",
+  "메디치미디어": "서울",
+  "라임": "서울",
+  "메가스터디북스": "서울",
+  "리미트리스": "서울",
+  "미우(대원씨아이)": "서울",
+  "미디어숲": "서울",
+  "바이북스": "서울",
+  "미다스북스": "서울",
+  "모모": "의왕",
+  "밥북": "서울",
+  "민음사": "서울",
+  "바다출판사": "서울",
+  "부키": "서울",
+  "보리": "파주",
+  "반타": "광명",
+  "북랩": "서울",
+  "북오션": "서울",
+  "반석북스": "부천",
+  "북스토리": "고양",
+  "북멘토(도서출판)": "서울",
+  "북루덴스": "성남",
+  "북스톤": "파주",
+  "비전비엔피(비전코리아)": "서울",
+  "비타북스": "서울",
+  "북하우스": "서울",
+  "비채": "파주",
+  "블랙피쉬": "서울",
+  "북스피어": "고양",
+  "북플라자": "서울",
+  "비즈니스북스": "서울",
+  "빅마우스": "파주",
+  "서사원": "서울",
+  "삼인": "서울",
+  "샨티": "서울",
+  "북스고": "서울",
+  "사계절": "파주",
+  "상상스퀘어": "성남",
+  "서울셀렉션": "서울",
+  "빈페이지": "서울",
+  "샘터사": "서울",
+  "서울미디어코믹스(서울문화사)": "서울",
+  "성안당": "파주",
+  "서해문집": "파주",
+  "세미콜론": "서울",
+  "비아토르": "서울",
+  "안그라픽스": "파주",
+  "솔출판사": "마포",
+  "씨드북(주)": "서울",
+  "슬로우리드": "서울",
+  "어웨이크(AWAKE)": "서울",
+  "시공사": "서울",
+  "알마": "서울",
+  "알에이치코리아(RHK)": "서울",
+  "열린책들": "파주",
+  "언더스탠드": "인천",
+  "안온북스": "서울",
+  "심야책방": "서울",
+  "안전가옥": "서울",
+  "애플씨드": "서울",
+  "오월의봄": "파주",
+  "에피케": "서울",
+  "오늘산책": "광주",
+  "온포인트": "서울",
+  "어크로스": "서울",
+  "워크룸프레스": "서울",
+  "위즈덤하우스": "서울",
+  "우리학교": "서울",
+  "윌북": "서울",
+  "이야기장수": "파주",
+  "인플루엔셜(주)": "서울",
+  "이학사": "서울",
+  "이끌": "하남",
+  "유유": "파주",
+  "자음과모음": "파주",
+  "지혜로": "남양주",
+  "은행나무": "서울",
+  "진성북스": "서울",
+  "체인지업": "울산",
+  "지식과감성#": "서울",
+  "창비": "파주",
+  "진솔컴퍼니": "서울",
+  "추수밭(청림출판)": "서울",
+  "책만": "안양",
+  "청림Life": "서울",
+  "잔상": "마포구",
+  "책밥": "구리",
+  "푸른사상": "파주",
+  "카시오페아": "서울",
+  "푸른숲": "파주",
+  "풀빛": "서울",
+  "탐": "서울",
+  "푸른역사": "서울",
+  "한겨레출판": "서울",
+  "클": "서울",
+  "풀빛미디어": "서울",
+  "페이지2(page2)": "서울",
+  "필름(Feelm)": "서울",
+  "한국경제신문": "서울",
+  "현대지성": "서울",
+  "현대문학": "서울",
+  "허블": "서울",
+  "황금가지": "서울",
+  "홍익포럼": "대구",
+  "혜화1117": "서울",
+  "현실문화": "서울",
+  "훈훈": "시흥",
+  "한길사": "파주",
+  "흐름출판": "서울",
+  "휴머니스트": "서울",
+  "현익출판": "서울",
+  "돋을새김": "",
+  "데이스타": "충주",
+  "다이브": "성남",
+  "난다": "파주",
+  "더퀘스트": "",
+  "레시피팩토리": "",
+  "귤프레스": "",
+  "가디언": "",
+  "달먹는토끼": "",
+  "나는별": "",
+  "느린서재": "",
+  "리프": "",
+  "리플레이": "서울",
+  "동아엠앤비": "",
+  "날(도서출판)": "",
+  "두드림미디어": "",
+  "나이스에듀": "",
+  "모두의도감": "",
+  "마르코폴로": "세종",
+  "모티브": "",
+  "메이애플": "",
+  "빅피시": "",
+  "문예춘추사": "서울",
+  "멘토스": "",
+  "바디앤마인드": "성남",
+  "미술문화": "",
+  "생각의힘": "",
+  "사람in": "",
+  "모과나무": "",
+  "세번째행성": "",
+  "믹스커피": "",
+  "빚은책들": "",
+  "싱긋": "",
+  "생각의길": "",
+  "스타라잇": "서울",
+  "스마트비즈니스": "서울",
+  "서스테인": "",
+  "알레": "",
+  "어떤책": "서울특별",
+  "스위밍꿀": "",
+  "소소의책": "",
+  "요다": "양주",
+  "앤의서재": "",
+  "용감한까치": "",
+  "성림원북스": "",
+  "에트르": "",
+  "온더페이지": "",
+  "저녁달": "",
+  "윌마": "",
+  "오리지널스": "서울",
+  "이든서재": "",
+  "창해": "",
+  "북갈피": "서울",
+  "오아시스": "",
+  "와이즈베리": "",
+  "웅진지식하우스": "파주",
+  "잉걸북스": "서울",
+  "책깃": "",
+  "책공장더불어": "",
+  "클로브": "서울",
+  "지니의서재": "",
+  "플래닛미디어": "",
+  "주니어태학": "",
+  "엘릭시르": "파주",
+  "한울림": "",
+  "포레스트북스": "",
+  "포르체": "서울",
+  "행성B(행성비)": "",
+  "책사람집": "",
+  "핀드": "고양",
+  "지누": "",
+  "한국기독교연구소": "",
+  "황소자리(Taurus)": "",
+  "힘찬북스(HCbooks)": "고양"
+ },
+ "_근거": {
+  "책과함께": {
+   "address": "서울특별시 성북구 장위로22길 5-6 (장위동, 하나주택)",
+   "evidence": "[qbv.purpleo.kr](https://qbv.purpleo.kr/article/431834)"
+  },
+  "골든래빗(주)": {
+   "address": "서울특별시 마포구 양화로 186 (동교동, LC타워)",
+   "evidence": "[rabbit.prosell.kr](https://rabbit.prosell.kr/member/all/), [marketbz.com](https://marketbz.com/companyDetail/4758701581)"
+  },
+  "길벗": {
+   "address": "서울특별시 마포구 월드컵로10길 56",
+   "evidence": "등록인 주소: 서울특별시 마포구 월드컵로10길 56 ([gilbut.co.kr.siteindices.com](https://gilbut.co.kr.siteindices.com/))"
+  },
+  "디자인하우스": {
+   "address": "서울특별시 중구 동호로 272",
+   "evidence": "[wzmlz.com](https://www.wzmlz.com/whois/designhouse.co.kr.html)"
+  },
+  "까치": {
+   "address": "서울특별시 용산구 서빙고로 67 103동 1003호 (용산동5가,파크타워)",
+   "evidence": "[incruit.com](https://www.incruit.com/company/1676643772/)"
+  },
+  "나무의마음": {
+   "address": "경기도 파주시 회동길 210",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/1998100425)"
+  },
+  "FIKA(피카)": {
+   "address": "서울시 강남구 테헤란로26길 14(역삼동, 대세빌딩) 2층, 5층-102호",
+   "evidence": "[fikabook.io](https://www.fikabook.io/)"
+  },
+  "글항아리": {
+   "address": "경기도 파주시 서패동 심학산로 10",
+   "evidence": "[m.namu.moe](https://m.namu.moe/w/%EA%B8%80%ED%95%AD%EC%95%84%EB%A6%AC)"
+  },
+  "김영사": {
+   "address": "경기도 파주시 문발로 197 (문발동, 파주출판단지)",
+   "evidence": "[ko.wikipedia.org](https://ko.wikipedia.org/wiki/%EA%B9%80%EC%98%81%EC%82%AC), [seenthis.kr](https://seenthis.kr/page/index?b_no=1018126734&uid=b7ba483b7ba483b7ba483b7ba)"
+  },
+  "구름이머무는동안": {
+   "address": "",
+   "evidence": "서울특별시 강동구 ([marketbz.com](https://marketbz.com/companyDetail/5499201644))"
+  },
+  "arte(아르테)": {
+   "address": "서울특별시 중구 청파로 463, 7층(중림동, 한국경제신문사)",
+   "evidence": "[bizno.net](https://bizno.net/article/1188103286) - 회사주소: 서울특별시 중구 청파로 463, 7층(중림동, 한국경제신문사)"
+  },
+  "눌와": {
+   "address": "서울특별시 마포구 월드컵북로16길 51",
+   "evidence": "[seenthis.kr](https://seenthis.kr/page/index?b_no=1058601860)"
+  },
+  "군자출판사(교재)": {
+   "address": "경기도 파주시 회동길 338",
+   "evidence": "경기도 파주시 회동길 338(서패동 474-1) [koonja.co.kr](https://www.koonja.co.kr/customer/individual_pay.html)"
+  },
+  "가톨릭출판사": {
+   "address": "서울특별시 중구 중림로 27",
+   "evidence": "[directory.cbck.or.kr](https://directory.cbck.or.kr/OnlineAddress/Catholic/DetailInfo.aspx?cgubn=c&char=all&code=201005004&gubn=13&gubn2=all&gyogu=201000011&tbxSearch=), [oldcatholicbook.kr](https://www.oldcatholicbook.kr/main/html.php?htmid=proc%2Fstore_01.html)"
+  },
+  "갈매나무": {
+   "address": "서울특별시 금천구 벚꽃로 298, 17층(가산동, 대륭포스트타워6차)",
+   "evidence": "[search.danawa.com](https://search.danawa.com/dsearch.php?k1=%EA%B0%88%EB%A7%A4%EB%82%98%EB%AC%B4%EC%B6%9C%ED%8C%90%EC%82%AC)"
+  },
+  "갈마바람": {
+   "address": "서울특별시 서초구",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/2479900132) - 서울특별시 서초구"
+  },
+  "21세기북스": {
+   "address": "경기도파주시회동길 201",
+   "evidence": "[namu.wiki](https://namu.wiki/w/%EB%B6%81%EC%9D%B4%EC%8B%AD%EC%9D%BC)에 따르면 (주)북이십일의 주소는 '경기도파주시회동길 201'이며, 21세기북스는 (주)북이십일의 산하 브랜드입니다."
+  },
+  "다람": {
+   "address": "서울특별시 광진구 아차산로 378",
+   "evidence": "[seenthis.kr](https://seenthis.kr/page/index?b_no=8629201324)"
+  },
+  "대원씨아이(단행본)": {
+   "address": "서울특별시 용산구 한강대로 15길 9-12",
+   "evidence": "[dwci.co.kr](https://www.dwci.co.kr/front/company/map)"
+  },
+  "담앤북스": {
+   "address": "충청북도 음성군 대소면 대풍산단로 58",
+   "evidence": "[dhamenbooks.com](https://www.dhamenbooks.com/)"
+  },
+  "다산초당": {
+   "address": "경기도 파주시 회동길 490",
+   "evidence": "[bizno.net](https://bizno.net/article/1058687039) 경기도 파주시 회동길 490 (문발동)"
+  },
+  "더베이스": {
+   "address": "인천광역시 계양구 계양문화로 48, 902-14호(계산동, 뉴월드프라자)",
+   "evidence": "[bizno.net](https://bizno.net/article/1038601559)"
+  },
+  "넥서스Friends": {
+   "address": "경기도 파주시 지목로 5",
+   "evidence": "경기도 파주시 지목로 5 [nexusbook.com](https://www.nexusbook.com/)"
+  },
+  "더페이지": {
+   "address": "경기도 고양시 덕양구",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/1081368959)"
+  },
+  "다반": {
+   "address": "경기도 수원시 영통구 신원로250번길 13-0 (원천동) 현대테라타워영통 A동 1408호",
+   "evidence": "경기도 수원시 영통구 신원로250번길 13-0 (원천동) 현대테라타워영통 A동 1408호"
+  },
+  "다산책방": {
+   "address": "경기도 파주시 회동길 490",
+   "evidence": "[bizno.net](https://bizno.net/article/1058687039)에 따르면 다산책방의 모회사인 (주)다산북스의 등록 주소는 '경기도 파주시 회동길 490'이며, [d.namu.moe](https://d.namu.moe/w/%EB%8B%A4%EC%82%B0%EB%B6%81%EC%8A%A4)에서 다산책방이 다산북스의 출판 브랜드로 확인됨."
+  },
+  "동녘": {
+   "address": "경기도 파주시 회동길 77-26",
+   "evidence": "[bizno.net](https://bizno.net/article/1119945975)"
+  },
+  "동양북스(동양문고)": {
+   "address": "서울특별시 마포구 동교로 22길14",
+   "evidence": "[dongyangbooks.com](http://www.dongyangbooks.com/introduction/introduction_010300.asp)"
+  },
+  "돌베개": {
+   "address": "경기도 파주시 회동길 77-20",
+   "evidence": "[dolbegae.co.kr](http://dolbegae.co.kr/info/)"
+  },
+  "뜨인돌": {
+   "address": "서울특별시 마포구 성미산로6길 45",
+   "evidence": "[ko.wikipedia.org](https://ko.wikipedia.org/wiki/%EB%9C%A8%EC%9D%B8%EB%8F%8C)"
+  },
+  "리드비": {
+   "address": "인천광역시 부평구 수변로 ***, ***동 ****호 (삼산동, 신성미소지움아파트)",
+   "evidence": "[onkorea.co.kr](https://onkorea.co.kr/ibu/Hv7ufEin3Sb1)"
+  },
+  "두란노": {
+   "address": "서울특별시 용산구 나루터길 35",
+   "evidence": "[duranno.com](http://www.duranno.com/introduce/history.asp) - 서울특별시 용산구 나루터길 35 (서빙고동 95) 두란노빌딩"
+  },
+  "메디치미디어": {
+   "address": "서울특별시 중구 중림로7길 4",
+   "evidence": "[jobkorea.co.kr](https://www.jobkorea.co.kr/company/44151540)"
+  },
+  "라임": {
+   "address": "서울 성북구 고려대로7가길 3 2층 (안암동2가, May Vill)",
+   "evidence": "[seenthis.kr](https://seenthis.kr/page/index?b_no=8403400946&lang=en) - 서울 성북구 고려대로7가길 3 2층 (안암동2가, May Vill)"
+  },
+  "메가스터디북스": {
+   "address": "서울특별시 영등포구 은행로 11(여의도동, 일신빌딩)",
+   "evidence": "[m.yes24.com](https://m.yes24.com/goods/detail/124768049) 서울특별시 영등포구 은행로 11(여의도동, 일신빌딩)"
+  },
+  "리미트리스": {
+   "address": "서울특별시 금천구 디지털로 178",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/5598701647) - 서울특별시 금천구 디지털로 178 (가산동)"
+  },
+  "미우(대원씨아이)": {
+   "address": "서울특별시 용산구 한강대로 15길 9-12",
+   "evidence": "[dwci.co.kr](https://dwci.co.kr/front/company/map) 및 [marketbz.com](https://marketbz.com/companyDetail/1068647762) 검색 결과에 따르면, 대원씨아이(주)의 주소는 '서울특별시 용산구 한강대로 15길 9-12'로 나타납니다."
+  },
+  "미디어숲": {
+   "address": "서울특별시 종로구",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/2793101666) 검색 결과에 '서울특별시 종로구'로 기재되어 있습니다."
+  },
+  "바이북스": {
+   "address": "서울특별시 영등포구 선유로49길 23 (양평동4가, 아이에스비즈타워2차) 1005호",
+   "evidence": "[seenthis.kr](https://seenthis.kr/page/index?b_no=1059092811&lang=en)"
+  },
+  "미다스북스": {
+   "address": "서울특별시 마포구 양화로 133 711호",
+   "evidence": "서울특별시 마포구 양화로 133 711호(서교동,서교타워) ([job.incruit.com](https://job.incruit.com/jobdb_info/jobpost.asp?job=2604030001015), [albamon.com](https://www.albamon.com/jobs/detail-company/-H4AeEXw9PKMjP8o50W_zA==))"
+  },
+  "모모": {
+   "address": "경기도 의왕시 내손로 **, ***동 ****호",
+   "evidence": "경기도 의왕시 내손로 **, ***동 ****호 (내손동, 포일자이아파트)"
+  },
+  "밥북": {
+   "address": "서울특별시 마포구 양화로 156 (동교동, LG팰리스빌딩)",
+   "evidence": "서울특별시 마포구 양화로 156 (동교동, LG팰리스빌딩) ([marketbz.com](https://marketbz.com/companyDetail/4848103728))"
+  },
+  "민음사": {
+   "address": "서울시 강남구 도산대로1길 62",
+   "evidence": "주소: (우) 06027 서울시 강남구 도산대로1길 62 강남출판문화센터 [minumsa.com](https://minumsa.com/about/direction/)"
+  },
+  "바다출판사": {
+   "address": "서울특별시 마포구 어울마당로5길 17",
+   "evidence": "[114.co.kr](https://www.114.co.kr/search/detail?comp_id=2847166&comp_tp_cd=TEL&upjong_cd=723100)"
+  },
+  "부키": {
+   "address": "서울특별시 마포구 양화로 125, 7층 (서교동, 경남관광빌딩)",
+   "evidence": "[bookie.co.kr](https://www.bookie.co.kr/about)"
+  },
+  "보리": {
+   "address": "경기도 파주시 직지길 492",
+   "evidence": "[boribook.com](https://www.boribook.com/)"
+  },
+  "반타": {
+   "address": "경기도 광명시 안재로**번길 *-*, 지***호",
+   "evidence": "스튜디오 반타는 출판사 업무로 위치는 경기도 광명시 하안동 ***-*, 경기도 광명시 안재로**번길 *-*, 지***호 (하안동)입니다. ([114.co.kr](https://www.114.co.kr/search/detail?comp_id=19151311&comp_tp_cd=GOV&godata_tp_cd=LOCALDATA&upjong_cd=))"
+  },
+  "북랩": {
+   "address": "서울특별시 금천구 가산디지털1로 168",
+   "evidence": "주소: 서울특별시 금천구 가산디지털1로 168(가산동, 우림라이온스밸리) 본사 및 POD센터 B동 B113~115호, 편집부 B동 B111호 [book.co.kr](https://www.book.co.kr/essay_ver2/company/map.php)"
+  },
+  "북오션": {
+   "address": "서울특별시 마포구 월드컵로14길 62 4층",
+   "evidence": "[incruit.com](https://www.incruit.com/company/1688059198/), [seenthis.kr](https://seenthis.kr/page/index?b_no=1058689740&lang=en)"
+  },
+  "반석북스": {
+   "address": "경기 부천시 원미구 계남로 106-1 (중동) 일부",
+   "evidence": "[albamon.com](https://m.albamon.com/jobs/detail-company/AnCaAqcNGgJSzvzaMd8UOQ==)"
+  },
+  "북스토리": {
+   "address": "경기도 고양시 덕양구 청초로 66, 덕은리버워크 B동 1412호 (덕은동)",
+   "evidence": "[ebookstory.co.kr](http://ebookstory.co.kr/company/location.php), [bookstory.web2002.kr](http://bookstory.web2002.kr/company/location.php)"
+  },
+  "북멘토(도서출판)": {
+   "address": "서울특별시 마포구 월드컵북로6길 69",
+   "evidence": "[ii.korea724.info](https://ii.korea724.info/en/-%EC%A3%BC-%EB%8F%84%EC%84%9C%EC%B6%9C%ED%8C%90%EB%B6%81%EB%A9%98%ED%86%A0-82-2-332-4885.html), [bookmento.helloweb.co.kr](http://bookmento.helloweb.co.kr/about)"
+  },
+  "북루덴스": {
+   "address": "경기도 성남시 분당구 판교로 421 (야탑동, 탑마을대우아파트)",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/7988702014)"
+  },
+  "북스톤": {
+   "address": "경기도 파주시 문발로 115(문발동) 세종출판단지 208호",
+   "evidence": "경기도 파주시 문발로 115(문발동) 세종출판단지 208호 ([bookstone.co.kr](https://bookstone.co.kr/service/company.php))"
+  },
+  "비전비엔피(비전코리아)": {
+   "address": "서울 마포구 잔다리로7길 12 1층",
+   "evidence": "[bnpnovel.com](https://www.bnpnovel.com/about)"
+  },
+  "비타북스": {
+   "address": "서울특별시 영등포구 은행로 11(여의도동, 일신빌딩)",
+   "evidence": "[yes24.com](https://m.yes24.com/goods/detail/13938351)"
+  },
+  "북하우스": {
+   "address": "서울특별시 마포구 양화로12길 16-9",
+   "evidence": "[bookhouse.co.kr](http://bookhouse.co.kr/bookhouse)"
+  },
+  "비채": {
+   "address": "경기도 파주시 문발로 197",
+   "evidence": "본사 | 경기도파주시문발로 197 ([namu.moe](https://namu.moe/w/%EB%B9%84%EC%B1%84))"
+  },
+  "블랙피쉬": {
+   "address": "서울 종로구 효자로7길 23",
+   "evidence": "[saramin.co.kr](https://www.saramin.co.kr/zf_user/jobs/view?rec_idx=39922384)"
+  },
+  "북스피어": {
+   "address": "경기도 고양시 덕양구 동송로 23-28, 305동 2201호(동산동, e편한세상 시티 삼송3차)",
+   "evidence": "[bizno.net](https://bizno.net/article/1059091700)"
+  },
+  "북플라자": {
+   "address": "서울특별시 강남구 학동로 329 (논현동 118-13) 북플라자 타워 6층",
+   "evidence": "[bookplaza.co.kr](https://www.bookplaza.co.kr/apply): 서울특별시 강남구 학동로 329 (논현동 118-13) 북플라자 타워 6층"
+  },
+  "비즈니스북스": {
+   "address": "서울 마포구 월드컵북로6길 3 (연남동, 이노베이스 빌딩) 7층",
+   "evidence": "[jobkorea.co.kr](https://www.jobkorea.co.kr/company/42139907)"
+  },
+  "빅마우스": {
+   "address": "경기 파주시 와동동 1426",
+   "evidence": "[bigmouth.co.kr](https://bigmouth.co.kr/)"
+  },
+  "서사원": {
+   "address": "서울특별시 마포구 성암로 330 DMC 첨단산업센터 713호",
+   "evidence": "[seosawonbooks.com](https://seosawonbooks.com/contact)"
+  },
+  "삼인": {
+   "address": "서울특별시 서대문구 연희로5길 82-0",
+   "evidence": "[seenthis.kr](https://seenthis.kr/page/index?b_no=1058193273&lang=en)"
+  },
+  "샨티": {
+   "address": "서울특별시 은평구 은평로3길 34-2",
+   "evidence": "서울특별시 은평구 은평로3길 34-2 (역촌동) [seenthis.kr](https://seenthis.kr/page/index?b_no=1059070189)"
+  },
+  "북스고": {
+   "address": "서울특별시 서대문구",
+   "evidence": "서울특별시 서대문구"
+  },
+  "사계절": {
+   "address": "경기도 파주시 회동길 252",
+   "evidence": "본사주소 : 10881경기도 파주시 회동길 252 (문발동) ([reportshop.co.kr](https://www.reportshop.co.kr/corp/519084)), 주소 / 우편번호: 경기도 파주시 회동길 252-0 (문발동) ([seenthis.kr](https://seenthis.kr/page/index?b_no=1028135065&lang=en))"
+  },
+  "상상스퀘어": {
+   "address": "경기도 성남시 분당구 성남대로 52(구미동), 그랜드프라자빌딩 604호",
+   "evidence": "[sangsangsquare-books.com](https://www.sangsangsquare-books.com/kr/about)"
+  },
+  "서울셀렉션": {
+   "address": "서울특별시 종로구 삼청로 6",
+   "evidence": "[seoulselection.com](https://www.seoulselection.com/bookstore/default/contact_us.php), [marketbz.com](https://marketbz.com/companyDetail/1018190070)"
+  },
+  "빈페이지": {
+   "address": "서울특별시 종로구 자하문로 300",
+   "evidence": "[sisabooks.com](https://www.sisabooks.com/emptypage/shop/view?book_num=103625) - 서울특별시 종로구 자하문로 300"
+  },
+  "샘터사": {
+   "address": "서울특별시 종로구 창경궁로35길 26",
+   "evidence": "(주)샘터사주소 : 서울특별시 종로구 창경궁로35길 26, 2F [isamtoh.com](https://www.isamtoh.com/main/html.php?htmid=service%2Farchive.html)"
+  },
+  "서울미디어코믹스(서울문화사)": {
+   "address": "서울특별시 용산구 만리재로 192",
+   "evidence": "[seoulmediacomics.com](https://www.seoulmediacomics.com/)"
+  },
+  "성안당": {
+   "address": "경기도 파주시 문발로 112 성안당 2F",
+   "evidence": "[bmcambridge.co.kr](https://www.bmcambridge.co.kr/infopage/index/about)"
+  },
+  "서해문집": {
+   "address": "경기도 파주시 광인사길 217-0 (문발동, 갤러리아이오)",
+   "evidence": "주소 : 경기도 파주시 광인사길 217-0 (문발동, 갤러리아이오) [qbv.purpleo.kr](https://qbv.purpleo.kr/article/364385)"
+  },
+  "세미콜론": {
+   "address": "서울시 강남구 도산대로1길 62, 강남출판문화센터 6층",
+   "evidence": "[dark.namu.moe](https://dark.namu.moe/w/%EC%84%B8%EB%AF%B8%EC%BD%9C%EB%A1%A0(%EB%AF%BC%EC%9D%8C%EC%82%AC))"
+  },
+  "비아토르": {
+   "address": "서울특별시 종로구 삼일대로 428",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/5988100603) - 서울특별시 종로구 삼일대로 428 (낙원동, 낙원상가)"
+  },
+  "안그라픽스": {
+   "address": "경기도 파주시 회동길 125-15",
+   "evidence": "[agbook.co.kr](https://www.agbook.co.kr/)"
+  },
+  "솔출판사": {
+   "address": "서울 마포구 서교동 342-8",
+   "evidence": "주소 || 서울 마포구 서교동 342-8"
+  },
+  "씨드북(주)": {
+   "address": "서울특별시 마포구 월드컵로16길 52-23",
+   "evidence": "[bizno.net](https://bizno.net/article/1058782439)"
+  },
+  "슬로우리드": {
+   "address": "서울특별시 성동구 연무장*가길 **, 성수역 SK V* Tower ****호",
+   "evidence": "업종 출판사 주소 서울특별시 성동구 연무장*가길 **, 성수역 SK V* Tower ****호 (성수동*가)"
+  },
+  "어웨이크(AWAKE)": {
+   "address": "서울시 마포구 월드컵북로 400 5층",
+   "evidence": "근무지: 서울시 마포구 월드컵북로 400 5층 ([editorsroom.kr](https://editorsroom.kr/job/327))"
+  },
+  "시공사": {
+   "address": "서울 성동구 광나루로 172 (성수동1가, 린하우스) 4층",
+   "evidence": "[albamon.com](https://m.albamon.com/jobs/detail-company/ybehFgGwpWAaZtbfef459g==), [ko.wikipedia.org](https://ko.wikipedia.org/wiki/%EC%8B%9C%EA%B3%B5%EC%82%AC)"
+  },
+  "알마": {
+   "address": "서울 마포구 연남로",
+   "evidence": "알마는 지난해 8월 독립해 서울 마포구 연남로 주택가의 밝고 환한 새 아지트로 이사했다. ([hani.co.kr](https://www.hani.co.kr/arti/culture/book/627463.html))"
+  },
+  "알에이치코리아(RHK)": {
+   "address": "서울특별시 금천구 가산디지털2로 53, 20층 (가산동, 한라시그마밸리)",
+   "evidence": "서울특별시 금천구 가산디지털2로 53, 20층 (가산동, 한라시그마밸리) [ko.wikipedia.org](https://ko.wikipedia.org/wiki/%EC%95%8C%EC%97%90%EC%9D%B4%EC%B9%98%EC%BD%94%EB%A6%AC%EC%95%84)"
+  },
+  "열린책들": {
+   "address": "경기도 파주시 문발로 253",
+   "evidence": "[incruit.com](https://www.incruit.com/company/11605708/)"
+  },
+  "언더스탠드": {
+   "address": "인천광역시 연수구 먼우금로 126, 216동 306호 인천광역시 연수구 동춘동 924 현대대림2차아파트",
+   "evidence": "[bizno.net](https://bizno.net/article/1223514602) 검색 결과에 따르면 출판사 언더스탠드의 회사주소는 '인천광역시 연수구 먼우금로 126, 216동 306호 인천광역시 연수구 동춘동 924 현대대림2차아파트'로 확인됩니다."
+  },
+  "안온북스": {
+   "address": "서울특별시 마포구 월드컵로14길 28, 3층 301호",
+   "evidence": "[bizno.net](https://bizno.net/article/3468702055)에 따르면 법인 본점 주소는 서울특별시 마포구 월드컵로14길 28, 3층 301호입니다. 한편 [books.bizto.co.kr](http://books.bizto.co.kr/board/board_list.php?board_name=notice)에는 서울 마포구 신촌로2길 19 320호로 기재되어 있습니다."
+  },
+  "심야책방": {
+   "address": "서울특별시 마포구",
+   "evidence": "서울특별시 마포구 ([marketbz.com](https://marketbz.com/companyDetail/1058782370))"
+  },
+  "안전가옥": {
+   "address": "서울특별시 성동구 뚝섬로1나길 5 헤이그라운드 203호",
+   "evidence": "[book.mcst.go.kr](https://book.mcst.go.kr/html/searchView.php?ac1=6110000&ac2=3030000&area_code=&area_code2=&cpage=15&page_type=&regn=251002018000005&search_area=%EC%A0%84%EB%B6%80&search_kind=&search_state=&search_type=&search_word=), [dark.namu.moe](https://dark.namu.moe/w/%EC%95%88%EC%A0%84%EA%B0%80%EC%98%A5(%EA%B8%B0%EC%97%85))"
+  },
+  "애플씨드": {
+   "address": "서울특별시 서초구 매헌로 25 (양재동,하이돈빌딩 6층)",
+   "evidence": "[bizno.net](https://bizno.net/article/2098155474)"
+  },
+  "오월의봄": {
+   "address": "경기도 파주시 회동길 363-15 2층 201호",
+   "evidence": "[bookcity.or.kr](https://bookcity.or.kr/sub/tenant_detail.php?idx=1011) - 경기도 파주시 회동길 363-15 2층 201호"
+  },
+  "에피케": {
+   "address": "서울특별시 종로구",
+   "evidence": "[book.mcst.go.kr](https://book.mcst.go.kr/html/searchView.php?ac1=6110000&ac2=3130000&area_code=&area_code2=&cpage=257&page_type=&regn=251002024000284&search_area=6450000&search_kind=&search_state=&search_type=&search_word=) - 소재지 | 서울특별시 종로구"
+  },
+  "오늘산책": {
+   "address": "광주광역시 동구 중앙로160번길 31-37[황금동 56-1]",
+   "evidence": "[gwangju.grandculture.net](http://gwangju.grandculture.net/gwangju/donggu/toc/GC60004847)에 따르면 오늘산책의 현 소재지는 '광주광역시 동구 중앙로160번길 31-37[황금동 56-1]'입니다."
+  },
+  "온포인트": {
+   "address": "서울 송파구 법원로11길 25 (문정동, 에이치비지니스파크) B동 207호",
+   "evidence": "[albamon.com](https://m.albamon.com/jobs/detail-company/BGzVtkdoiy6cKhJTdQMwWQ==)"
+  },
+  "어크로스": {
+   "address": "서울특별시 마포구",
+   "evidence": "서울특별시 마포구 [marketbz.com](https://marketbz.com/companyDetail/1658101284)"
+  },
+  "워크룸프레스": {
+   "address": "서울특별시 종로구 자하문로19길",
+   "evidence": "[allthatcompany.com](https://allthatcompany.com/c/1579917/%EC%9B%8C%ED%81%AC%EB%A3%80%ED%94%84%EB%A0%88%EC%8A%A4) 주소 : 서울특별시 종로구 자하문로19길"
+  },
+  "위즈덤하우스": {
+   "address": "서울 마포구 양화로 19 (합정동,합정오피스빌딩) 16F - 17F",
+   "evidence": "[lab.incruit.com](https://lab.incruit.com/inc/5739457)"
+  },
+  "우리학교": {
+   "address": "서울특별시 마포구 동교로12안길 8",
+   "evidence": "[jobkorea.co.kr](https://www.jobkorea.co.kr/Recruit/Co_Read/C/woorischool/Company_name/%E3%88%9C%EC%9A%B0%EB%A6%AC%ED%95%99%EA%B5%90)"
+  },
+  "윌북": {
+   "address": "서울 마포구 동교로19길 28",
+   "evidence": "[jobkorea.co.kr](https://www.jobkorea.co.kr/company/46164524)"
+  },
+  "이야기장수": {
+   "address": "경기도 파주시 심학산로 10",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/3628603141) - 경기도 파주시 심학산로 10 (서패동)"
+  },
+  "인플루엔셜(주)": {
+   "address": "서울특별시 서초구 서초대로 398",
+   "evidence": "[influential.co.kr](https://www.influential.co.kr/contact), [thevc.kr](https://thevc.kr/influential)"
+  },
+  "이학사": {
+   "address": "서울 종로구 연건동 ***번지",
+   "evidence": "서울 종로구 연건동 ***번지 [reportworld.co.kr](https://www.reportworld.co.kr/company/9252521)"
+  },
+  "이끌": {
+   "address": "경기도 하남시",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/7692500965)"
+  },
+  "유유": {
+   "address": "경기 파주시 책향기로 337, 302동 102호 (문발동,숲속길마을동문굿모닝힐아파트)",
+   "evidence": "[saramin.co.kr](https://www.saramin.co.kr/zf_user/company-info/view/csn/VUYvYUVmbXR1SnBzYzZONTNENk9XQT09/company_nm/%EB%8F%84%EC%84%9C%EC%B6%9C%ED%8C%90%EC%9C%A0%EC%9C%A0)"
+  },
+  "자음과모음": {
+   "address": "경기도 파주시 서패동 469-1",
+   "evidence": "[aks.ac.kr](http://dh.aks.ac.kr/~gwangju/wiki/index.php/%EC%9E%90%EC%9D%8C%EA%B3%BC%EB%AA%A8%EC%9D%8C)"
+  },
+  "지혜로": {
+   "address": "경기도 남양주시 별내3로 322",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/3468602742)"
+  },
+  "은행나무": {
+   "address": "서울특별시 마포구 양화로11길 54",
+   "evidence": "[ehbook.co.kr](http://ehbook.co.kr/about)과 [marketbz.com](https://marketbz.com/companyDetail/1058808741) 검색 결과에서 은행나무출판사의 주소를 '서울시 마포구 서교동 384-12' 및 '서울특별시 마포구 양화로11길 54 (서교동)'로 확인했습니다."
+  },
+  "진성북스": {
+   "address": "서울특별시 강남구",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/2099097253)"
+  },
+  "체인지업": {
+   "address": "울산광역시 울주군 외고산옹기길 15-4",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/2558801626)"
+  },
+  "지식과감성#": {
+   "address": "서울특별시 금천구",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/1192264066) - 서울특별시 금천구"
+  },
+  "창비": {
+   "address": "경기도 파주시 회동길 184",
+   "evidence": "[factory.wjsevin.com](https://factory.wjsevin.com/factory/79148)"
+  },
+  "진솔컴퍼니": {
+   "address": "서울 강남구 강남대로 518",
+   "evidence": "[jobploy.kr](https://www.jobploy.kr/ko/company/jinsol-company-co-ltd)에 게재된 진솔컴퍼니 기업 정보에서 회사 위치를 '서울 강남구 강남대로 518 (논현동)'으로 안내하고 있습니다."
+  },
+  "추수밭(청림출판)": {
+   "address": "서울시 성동구 아차산로 17길 49, 1010호(생각공장 데시앙플렉스)",
+   "evidence": "[chungrim.com](https://chungrim.com/bbs/page.php?hid=m01_02) - 주소 서울시 성동구 아차산로 17길 49, 1010호(생각공장 데시앙플렉스)"
+  },
+  "책만": {
+   "address": "경기도 안양시 동안구 학의로 282, 금강펜테리움IT타워 A동 810호",
+   "evidence": "[onlybook.co.kr](https://www.onlybook.co.kr/entry/about-us)"
+  },
+  "청림Life": {
+   "address": "서울시 성동구 아차산로 17길 49, 1010호(생각공장 데시앙플렉스)",
+   "evidence": "[chungrim.com](https://chungrim.com/bbs/page.php?hid=m01_02)"
+  },
+  "잔상": {
+   "address": "서울특별시 마포구",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/5920401923)에 따르면 출판사 '잔상'의 등록 주소는 '서울특별시 마포구'까지 확인됩니다."
+  },
+  "책밥": {
+   "address": "경기 구리시 갈매중앙로 190 휴밸나인 A동 6001호",
+   "evidence": "[bookisbab.co.kr](https://www.bookisbab.co.kr/board)"
+  },
+  "푸른사상": {
+   "address": "경기도 파주시 회동길 337-16",
+   "evidence": "[prun21c.com](http://www.prun21c.com/index.php), [purpleo.kr](https://lfy.purpleo.kr/article/15397)"
+  },
+  "카시오페아": {
+   "address": "서울특별시 마포구 월드컵로 14길 56",
+   "evidence": "[cassiopeiabook.com](http://cassiopeiabook.com/page/14), [jobkorea.co.kr](https://www.jobkorea.co.kr/company/46619661)"
+  },
+  "푸른숲": {
+   "address": "경기도 파주시 회동길 57-9",
+   "evidence": "[reportshop.co.kr](https://www.reportshop.co.kr/corp/1093283), [factory.wjsevin.com](https://factory.wjsevin.com/factory/79130)"
+  },
+  "풀빛": {
+   "address": "서울시 강서구 양천로 583, A동 21층 2110호(우림블루나인 비즈니스센터)",
+   "evidence": "[pulbit.co.kr](https://www.pulbit.co.kr/introduce/location.asp)"
+  },
+  "탐": {
+   "address": "서울시 마포구 잔다리로7길 19, 3층",
+   "evidence": "[totobook.com](http://totobook.com/page/sub03_01.php)에 토토북, 큰솔, 탐 출판 등록 소식과 함께 찾아오시는 길 주소로 '서울시 마포구 잔다리로7길 19, 3층'이 기재되어 있음."
+  },
+  "푸른역사": {
+   "address": "서울특별시 종로구 자하문로8길 13",
+   "evidence": "서울특별시 종로구 자하문로8길 13 [seenthis.kr](https://seenthis.kr/page/index?b_no=1069031573&uid=b7ba483b7ba483b7ba483b7ba483b7ba)"
+  },
+  "한겨레출판": {
+   "address": "서울특별시 마포구 효창목길 6 (공덕동,한겨레신문사)",
+   "evidence": "[reportshop.co.kr](https://www.reportshop.co.kr/corp/1174178)"
+  },
+  "클": {
+   "address": "서울특별시 은평구 연서로26길 25-6(대조동)",
+   "evidence": "[gmarket.co.kr](http://mg.gmarket.co.kr/SellerInfo/SellerInfo?alias=bookkl&goodscode=2305744869) 판매자 정보에서 (주)출판사클의 주소로 '서울특별시 은평구 연서로26길 25-6(대조동)'이 확인됨."
+  },
+  "풀빛미디어": {
+   "address": "서울시 강서구 양천로 583, A동 21층 2110호",
+   "evidence": "서울시 강서구 양천로 583, A동 21층 2110호(우림블루나인 비즈니스센터)"
+  },
+  "페이지2(page2)": {
+   "address": "서울특별시 영등포구 여의대로 108-0 (여의도동) 타워1동 28층 (여의도동, 파크원)",
+   "evidence": "[seenthis.kr](https://seenthis.kr/page/index?b_no=6748801303&uid=922b819f922b819f922b819f)"
+  },
+  "필름(Feelm)": {
+   "address": "서울특별시 영등포구 영등포로 150, A동 14, 15층 1409, 1510, 1511호 (당산동 1가, 생각공장 당산)",
+   "evidence": "서울특별시 영등포구 영등포로 150, A동 14, 15층 1409, 1510, 1511호 (당산동 1가, 생각공장 당산) [feelmgroup.com](https://www.feelmgroup.com/)"
+  },
+  "한국경제신문": {
+   "address": "서울특별시 중구 청파로 463",
+   "evidence": "한국경제신문의 주소는 서울특별시 중구 청파로 463입니다. [company.hankyung.com](https://company.hankyung.com/ked/kor/company), [reportshop.co.kr](https://www.reportshop.co.kr/corp/501570)"
+  },
+  "현대지성": {
+   "address": "서울 강서구 마곡중앙6로 40 (마곡동, 장흥빌딩) 10층",
+   "evidence": "[jobkorea.co.kr](https://www.jobkorea.co.kr/company/44050297), [wanted.co.kr](https://www.wanted.co.kr/company/19383)"
+  },
+  "현대문학": {
+   "address": "서울 서초구 신반포로 321, 5층",
+   "evidence": "[reportshop.co.kr](https://www.reportshop.co.kr/corp/1034273), [jobkorea.co.kr](https://www.jobkorea.co.kr/company/45181071)"
+  },
+  "허블": {
+   "address": "서울특별시중구 퇴계로30길 15-8 (무석빌딩) 2층",
+   "evidence": "[namu.moe](https://namu.moe/w/%ED%97%88%EB%B8%94%20%EC%B6%9C%ED%8C%90%EC%82%AC)"
+  },
+  "황금가지": {
+   "address": "서울특별시 강남구 신사동 506번지 6층",
+   "evidence": "법인 주소 서울특별시 강남구 신사동 506번지 6층 [factory.wjsevin.com](https://factory.wjsevin.com/factory/22715)"
+  },
+  "홍익포럼": {
+   "address": "대구광역시 중구 동덕로 46-3",
+   "evidence": "대구광역시 중구 동덕로 46-3 ([daegu.grandculture.net](https://daegu.grandculture.net/daegu/toc/GC40006734))"
+  },
+  "혜화1117": {
+   "address": "서울특별시 종로구 혜화로11가길 17",
+   "evidence": "서울 종로구 혜화로11가길 17 [kmib.co.kr](https://www.kmib.co.kr/article/view.asp?arcid=1745485060)"
+  },
+  "현실문화": {
+   "address": "서울특별시 은평구 불광로 128, 3층 302호(불광동, 배진하우스)서울특별시 은평구 불광동 13-22 배진하우스",
+   "evidence": "[bizno.net](https://bizno.net/article/2149016325)"
+  },
+  "훈훈": {
+   "address": "경기도 시흥시 월곶해안로 177",
+   "evidence": "[onkorea.co.kr](https://onkorea.co.kr/siheung/EoHYxLjC3CGL), [marketbz.com](https://marketbz.com/companyDetail/3548100624)"
+  },
+  "한길사": {
+   "address": "경기 파주시 광인사길 37 (문발동, 한길사) 3층",
+   "evidence": "[jobkorea.co.kr](https://www.jobkorea.co.kr/company/43175745)"
+  },
+  "흐름출판": {
+   "address": "서울특별시 마포구 월드컵북로5길 48-9",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/1058771679) 서울특별시 마포구 월드컵북로5길 48-9 (서교동)"
+  },
+  "휴머니스트": {
+   "address": "서울 마포구 동교로23길 76",
+   "evidence": "[humanistbooks.com](https://www.humanistbooks.com/)"
+  },
+  "현익출판": {
+   "address": "서울특별시 영등포구 은행로 11(여의도동, 일신빌딩)",
+   "evidence": "[m.yes24.com](https://m.yes24.com/goods/detail/142252626)"
+  },
+  "돋을새김": {
+   "address": "",
+   "evidence": ""
+  },
+  "데이스타": {
+   "address": "충청북도 충주시 문곡길 44-11",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/5288603299)"
+  },
+  "다이브": {
+   "address": "경기도 성남시 분당구 판교로 744,분당테크노파크 C동 509호",
+   "evidence": "[diveintoskin.co.kr](https://www.diveintoskin.co.kr/shopinfo/contact.html)"
+  },
+  "난다": {
+   "address": "경기도 파주시 회동길 210",
+   "evidence": "[allybook.kr](https://allybook.kr/posts/o7tno6d)"
+  },
+  "더퀘스트": {
+   "address": "",
+   "evidence": ""
+  },
+  "레시피팩토리": {
+   "address": "",
+   "evidence": ""
+  },
+  "귤프레스": {
+   "address": "",
+   "evidence": ""
+  },
+  "가디언": {
+   "address": "",
+   "evidence": ""
+  },
+  "달먹는토끼": {
+   "address": "",
+   "evidence": "검색 결과에 '달먹는토끼' 출판사에 대한 정보가 없습니다."
+  },
+  "나는별": {
+   "address": "",
+   "evidence": ""
+  },
+  "느린서재": {
+   "address": "",
+   "evidence": ""
+  },
+  "리프": {
+   "address": "",
+   "evidence": ""
+  },
+  "리플레이": {
+   "address": "서울특별시 강동구 천호대로 1057 (오피스텔트레벨) 2층",
+   "evidence": "리플레이 서울특별시 강동구 천호대로 1057 (오피스텔트레벨) 2층 ([replayshop.co.kr](http://replayshop.co.kr/service/company.php))"
+  },
+  "동아엠앤비": {
+   "address": "",
+   "evidence": ""
+  },
+  "날(도서출판)": {
+   "address": "",
+   "evidence": ""
+  },
+  "두드림미디어": {
+   "address": "",
+   "evidence": "Address : 3130 Wilshire Blvd Ste 100, Los Angeles, CA 90010 USA [kbookstore.com](https://kbookstore.com/publisher/%eb%91%90%eb%93%9c%eb%a6%bc%eb%af%b8%eb%94%94%ec%96%b4/)"
+  },
+  "나이스에듀": {
+   "address": "",
+   "evidence": ""
+  },
+  "모두의도감": {
+   "address": "",
+   "evidence": ""
+  },
+  "마르코폴로": {
+   "address": "세종시",
+   "evidence": "세종시의 집이 사무실이다. ([kmib.co.kr](https://www.kmib.co.kr/article/view.asp?arcid=1773888303))"
+  },
+  "모티브": {
+   "address": "",
+   "evidence": ""
+  },
+  "메이애플": {
+   "address": "",
+   "evidence": ""
+  },
+  "빅피시": {
+   "address": "",
+   "evidence": ""
+  },
+  "문예춘추사": {
+   "address": "서울특별시 마포구 동교로27길 53",
+   "evidence": "[m.blog.naver.com](https://m.blog.naver.com/moonchusa/221420949192) - 서울특별시 마포구 동교로27길 53"
+  },
+  "멘토스": {
+   "address": "",
+   "evidence": ""
+  },
+  "바디앤마인드": {
+   "address": "경기도 성남시 수정구 위례서일로 34",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/3778802094)"
+  },
+  "미술문화": {
+   "address": "",
+   "evidence": ""
+  },
+  "생각의힘": {
+   "address": "",
+   "evidence": ""
+  },
+  "사람in": {
+   "address": "",
+   "evidence": ""
+  },
+  "모과나무": {
+   "address": "",
+   "evidence": "검색 결과([yoda.wiki](https://yoda.wiki/wiki/Harpole_%26_Foxberrow_General_Publishers))에는 모과나무 프레스(Quince Tree Press)가 영국 케터링에 위치한다는 내용만 있을 뿐, 시·도부터 시작하는 전체 주소 형식의 등록 소재지는 확인되지 않습니다."
+  },
+  "세번째행성": {
+   "address": "",
+   "evidence": ""
+  },
+  "믹스커피": {
+   "address": "",
+   "evidence": ""
+  },
+  "빚은책들": {
+   "address": "",
+   "evidence": ""
+  },
+  "싱긋": {
+   "address": "",
+   "evidence": ""
+  },
+  "생각의길": {
+   "address": "",
+   "evidence": ""
+  },
+  "스타라잇": {
+   "address": "서울특별시 영등포구 영등포로 109",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/1208631776)"
+  },
+  "스마트비즈니스": {
+   "address": "서울특별시 종로구 새문안로 92, 802호",
+   "evidence": "[smartbizn.com](https://www.smartbizn.com/com/com-2.html)"
+  },
+  "서스테인": {
+   "address": "",
+   "evidence": ""
+  },
+  "알레": {
+   "address": "",
+   "evidence": ""
+  },
+  "어떤책": {
+   "address": "서울특별시 성산로 253-4",
+   "evidence": "어떤책, 서울특별시, 성산로 253-4 ([2pos.kr](https://2pos.kr/1438/330534))"
+  },
+  "스위밍꿀": {
+   "address": "",
+   "evidence": ""
+  },
+  "소소의책": {
+   "address": "",
+   "evidence": ""
+  },
+  "요다": {
+   "address": "경기도 양주시 은현면 운하로101번길 210",
+   "evidence": "ADDRESS: 경기도 양주시 은현면 운하로101번길 210 ([yodakorea.com](https://yodakorea.com/shopinfo/company.html))"
+  },
+  "앤의서재": {
+   "address": "",
+   "evidence": ""
+  },
+  "용감한까치": {
+   "address": "",
+   "evidence": ""
+  },
+  "성림원북스": {
+   "address": "",
+   "evidence": ""
+  },
+  "에트르": {
+   "address": "",
+   "evidence": ""
+  },
+  "온더페이지": {
+   "address": "",
+   "evidence": ""
+  },
+  "저녁달": {
+   "address": "",
+   "evidence": ""
+  },
+  "윌마": {
+   "address": "",
+   "evidence": ""
+  },
+  "오리지널스": {
+   "address": "서울특별시 용산구",
+   "evidence": "주소(도로명) | 서울특별시 용산구 ([marketbz.com](https://marketbz.com/companyDetail/3685200375))"
+  },
+  "이든서재": {
+   "address": "",
+   "evidence": ""
+  },
+  "창해": {
+   "address": "",
+   "evidence": ""
+  },
+  "북갈피": {
+   "address": "서울 중구 다산로36나길 18, 501호",
+   "evidence": "[chaekgalpi.com](https://chaekgalpi.com/map)"
+  },
+  "오아시스": {
+   "address": "",
+   "evidence": ""
+  },
+  "와이즈베리": {
+   "address": "",
+   "evidence": ""
+  },
+  "웅진지식하우스": {
+   "address": "경기도 파주시 회동길 20",
+   "evidence": "웅진지식하우스는 주식회사 웅진씽크빅의 출판 브랜드이며([wjthinkbig.com](https://www.wjthinkbig.com/brand/brand_04.do)), 사업보고서에 명시된 당사의 본점 소재지는 경기도 파주시 회동길 20입니다([kind.krx.co.kr](https://kind.krx.co.kr/external/2026/03/18/002031/20260318009424/11011.htm))."
+  },
+  "잉걸북스": {
+   "address": "서울특별시 관악구",
+   "evidence": "[marketbz.com](https://marketbz.com/companyDetail/1191852340)"
+  },
+  "책깃": {
+   "address": "",
+   "evidence": ""
+  },
+  "책공장더불어": {
+   "address": "",
+   "evidence": ""
+  },
+  "클로브": {
+   "address": "서울특별시 강남구 도산대로 326",
+   "evidence": "서울특별시 강남구 도산대로 326 ([marketbz.com](https://marketbz.com/companyDetail/7278801965))"
+  },
+  "지니의서재": {
+   "address": "",
+   "evidence": ""
+  },
+  "플래닛미디어": {
+   "address": "",
+   "evidence": ""
+  },
+  "주니어태학": {
+   "address": "",
+   "evidence": ""
+  },
+  "엘릭시르": {
+   "address": "파주시 회동길 121",
+   "evidence": "사업장주소 : (10881) 파주시 회동길 121 (문발동 532-3)"
+  },
+  "한울림": {
+   "address": "",
+   "evidence": ""
+  },
+  "포레스트북스": {
+   "address": "",
+   "evidence": ""
+  },
+  "포르체": {
+   "address": "서울특별시 중구 장충단로 188",
+   "evidence": "[bundobook.co.kr](https://bundobook.co.kr/goods/brand?code=0414)의 반품주소란에 '서울특별시 중구 장충단로 188 (분도빌딩) 102호. 분도출판사'로 기재되어 있으며, 포르체는 분도출판사의 브랜드(임프린트)임."
+  },
+  "행성B(행성비)": {
+   "address": "",
+   "evidence": "제공된 검색 결과에 (주)행성비의 주소 정보가 없음 ([thinkzon.com](https://www.thinkzon.com/sale_bizreport/2467628))"
+  },
+  "책사람집": {
+   "address": "",
+   "evidence": "검색 결과에 '책사람집'에 대한 정보가 없습니다. '책과사람'의 경우에도 [booksmall.co.kr](https://www.booksmall.co.kr/service/company.php)과 [seenthis.kr](https://seenthis.kr/page/index?b_no=6051620568&uid=b7ba483b7ba483b7ba483b7ba)에서 각각 경기도 고양시와 광주광역시로 다른 주소가 확인되어 빈 문자열을 반환합니다."
+  },
+  "핀드": {
+   "address": "경기도 고양시 덕양구 고양동 산수그린빌라 라동 306호(읍내로6번길23)",
+   "evidence": "ADDRESS :경기도 고양시 덕양구 고양동 산수그린빌라 라동 306호(읍내로6번길23) [f-ind.co.kr](https://f-ind.co.kr/shopinfo/company.html)"
+  },
+  "지누": {
+   "address": "",
+   "evidence": ""
+  },
+  "한국기독교연구소": {
+   "address": "",
+   "evidence": ""
+  },
+  "황소자리(Taurus)": {
+   "address": "",
+   "evidence": "검색 결과에 황소자리 출판사의 주소 정보가 없습니다. [aladin.co.kr](https://www.aladin.co.kr/publisher/wbrand.aspx?PublisherCode=12572), [kyobobook.co.kr](https://casting.kyobobook.co.kr/caster/jpnim1968)"
+  },
+  "힘찬북스(HCbooks)": {
+   "address": "경기도 고양시 일산서구 하이파크3로",
+   "evidence": "스타트업 커뮤니티 씬디스 기업정보 조회 결과, 힘찬북스의 소재지도로명주소는 '경기도 고양시 일산서구 하이파크3로'로 확인됩니다. [seenthis.kr](https://seenthis.kr/page/index?b_no=2479900433&uid=b7ba483b7ba483b7ba483b7ba483b7ba)"
+  }
+ }
+}
