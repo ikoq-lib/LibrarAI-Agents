@@ -28,3 +28,16 @@ node_modules/
 .artifacts/
 b04w/cache/
 *.bak
+
+# 대용량 원본 데이터 — Supabase에 적재되어 있어 저장소에 둘 이유가 없음
+References/whole_book_list*
+References/*대출내역*.xlsx
+
+# 개인 식별 가능 데이터·운영 원장 (회원번호·생년월일·담당자 실명)
+References/users_data.xlsx
+References/budget_2026.xlsx
+
+# 검증·디버깅 잔여물 (재발 방지)
+verify_*.png
+*_tmp.txt
+__shot_*.js
