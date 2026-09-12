@@ -122,6 +122,63 @@ def hangul_chars(text: str) -> list[str]:
     return [c for c in text if decompose(c) is not None]
 
 
+
+# 본표제 첫 글자가 한글이 아닐 때의 읽기 — 작품기호는 음절 한 글자여야 한다.
+# 사서 확정(2026-09-12): 영문은 한글 발음으로("AI 알아보기" → 에이 → `에`),
+# 숫자는 한자음으로 읽는다("64" → 육십사 → `육`).
+LATIN_READING = {
+    "a": "에이", "b": "비", "c": "시", "d": "디", "e": "이", "f": "에프", "g": "지",
+    "h": "에이치", "i": "아이", "j": "제이", "k": "케이", "l": "엘", "m": "엠", "n": "엔",
+    "o": "오", "p": "피", "q": "큐", "r": "아르", "s": "에스", "t": "티", "u": "유",
+    "v": "브이", "w": "더블유", "x": "엑스", "y": "와이", "z": "제트",
+}
+SINO_DIGIT = ("영", "일", "이", "삼", "사", "오", "육", "칠", "팔", "구")
+SINO_UNIT = ("", "십", "백", "천")
+
+
+def sino_read(number: str) -> str:
+    """숫자를 한자음으로 읽는다: 64 → 육십사, 10 → 십, 2026 → 이천이십육."""
+    digits = number.lstrip("0") or "0"
+    if len(digits) > 4:                      # 다섯 자리 이상은 앞 네 자리만 읽는다
+        digits = digits[:4]
+    if digits == "0":
+        return SINO_DIGIT[0]
+    out = ""
+    size = len(digits)
+    for index, ch in enumerate(digits):
+        value = int(ch)
+        unit = SINO_UNIT[size - index - 1]
+        if value == 0:
+            continue
+        if value == 1 and unit:              # 10은 '일십'이 아니라 '십'
+            out += unit
+        else:
+            out += SINO_DIGIT[value] + unit
+    return out
+
+
+def title_first_syllable(title: str) -> tuple[str, str]:
+    """본표제에서 작품기호로 쓸 음절 한 글자를 뽑는다. (음절, 산출 설명)"""
+    text = (title or "").strip()
+    index = 0
+    while index < len(text):
+        ch = text[index]
+        if decompose(ch) is not None:
+            return ch, ""
+        if ch.isdigit():
+            run = ""
+            while index < len(text) and text[index].isdigit():
+                run += text[index]
+                index += 1
+            reading = sino_read(run)
+            return reading[0], f"숫자 '{run}'을 한자음 '{reading}'으로 읽어 첫 글자"
+        lower = ch.lower()
+        if lower in LATIN_READING:
+            reading = LATIN_READING[lower]
+            return reading[0], f"영문 '{ch}'를 한글 발음 '{reading}'으로 읽어 첫 글자"
+        index += 1
+    return "", ""
+
 def author_mark(base_name: str, title_proper: str) -> AuthorMark:
     """저자명과 본표제로 저자기호를 만든다.
 
@@ -148,15 +205,16 @@ def author_mark(base_name: str, title_proper: str) -> AuthorMark:
             f"저자명 '{name}'이 한 글자라 둘째 글자가 없습니다. 사서 확인이 필요합니다."
         )
 
-    title_chars = hangul_chars(title_proper)
-    if not title_chars:
+    work, work_note = title_first_syllable(title_proper)
+    if not work:
         raise AuthorMarkError(
-            f"본표제 '{title_proper}'에 한글 음절이 없어 작품기호를 정할 수 없습니다."
+            f"본표제 '{title_proper}'에서 작품기호로 쓸 음절을 찾지 못했습니다."
         )
+    if work_note:
+        notes.append(work_note)
 
     first, second = chars[0], chars[1]
     digits = syllable_digits(second)
-    work = title_chars[0]
 
     cho, jung, _ = decompose(second)
     table_note = " (ㅊ 전용 모음열)" if cho == "ㅊ" else ""
@@ -171,7 +229,7 @@ def author_mark(base_name: str, title_proper: str) -> AuthorMark:
         second_char=second,
         digits=digits,
         work_char=work,
-        derivation=derivation + (f" [{notes[0]}]" if notes else ""),
+        derivation=derivation + ("".join(f" [{n}]" for n in notes)),
         notes=notes,
     )
 

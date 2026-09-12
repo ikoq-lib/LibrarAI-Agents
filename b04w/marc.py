@@ -174,20 +174,26 @@ def build(book: BookInput, cls: Classification, author_mark: str, ctrl_no: str,
     if cls.keywords:
         fields.append(Field("653", "__", " ".join(f"$a{_strip_period(k)}" for k in cls.keywords)))
 
+    # $4aut(주 책임자)은 정확히 1회다. 공저를 둘 다 main 으로 표시해 온 경우
+    # 첫 사람만 주 책임자로 둔다(2026-09-12 실측: 「처음 만나는 지경학」 2회 부여).
+    main_seen = False
     for person in cls.contributors:
         name = _strip_period(str(person.get("name") or ""))
         if not name:
             continue
+        is_main = bool(person.get("main")) and not main_seen
+        if is_main:
+            main_seen = True
         if (person.get("type") or "person") == "corporate":
             value = f"$a{name}"
-            if person.get("main"):
+            if is_main:
                 value += " $4aut"
             fields.append(Field("710", "__", value))
             continue
         value = f"$a{name}"
         if person.get("dates"):
             value += f" $d{person['dates']}"
-        if person.get("main"):
+        if is_main:
             value += " $4aut"
         fields.append(Field("700", "1_", value))
 

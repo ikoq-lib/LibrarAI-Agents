@@ -138,8 +138,24 @@ PLACE_GAP_MARKERS = (
 )
 
 
-def split_place_gaps(problems: list[str]) -> tuple[list[str], list[str]]:
-    """QA 지적을 (진짜 결함, 발행지 공백)으로 나눈다."""
-    gaps = [p for p in problems if p in PLACE_GAP_MARKERS]
-    failures = [p for p in problems if p not in PLACE_GAP_MARKERS]
+# 번역서의 041·546도 마찬가지다 — 원작 언어를 확인하지 못했다고 워커가 신고했다면
+# 지어내지 않은 결과이므로 결함이 아니다. 워커가 신고 없이 빠뜨렸으면 결함으로 남긴다.
+TRANSLATION_GAP_MARKERS = (
+    "번역서인데 041이 없습니다.",
+    "번역서인데 546 언어주기가 없습니다.",
+)
+
+
+def split_place_gaps(problems: list[str], cls=None) -> tuple[list[str], list[str]]:
+    """QA 지적을 (진짜 결함, 정보 공백)으로 나눈다.
+
+    정보 공백 = 추정 기재를 하지 않아 비어 있는 항목. 사서가 실물로 확인해야 하며,
+    고쳐야 할 레코드 결함과 섞어 세면 진짜 결함이 묻힌다.
+    """
+    markers = set(PLACE_GAP_MARKERS)
+    reported = " ".join(getattr(cls, "needs_info", []) or []) if cls is not None else ""
+    if "원작" in reported or "언어" in reported:
+        markers |= set(TRANSLATION_GAP_MARKERS)
+    gaps = [p for p in problems if p in markers]
+    failures = [p for p in problems if p not in markers]
     return failures, gaps

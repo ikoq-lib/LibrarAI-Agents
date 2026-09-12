@@ -15,3 +15,4 @@
 - [자관 분포 0건 단정 금지](feedback_no_zero_without_query.md) — 그 세목을 직접 쿼리하지 않고 "0건"이라 적으면 안 됨, 005.53 재작업 사례
 - ["없는 번호" 단정 금지](feedback_no_false_absence_claim.md) — 191.16·327.856을 없다고 주장했으나 본표에 실재, 부재 주장 전 발췌에서 직접 확인
 - [도치형 성 한 글자 저자기호](feedback_one_syllable_surname.md) — 길, 안자나 → 길62소. 성이 한 글자면 이름 첫 글자를 둘째 글자로
+- [비한글 표제의 작품기호](feedback_nonhangul_title_mark.md) — 영문은 한글 발음(AI→에), 숫자는 한자음(64→육)
