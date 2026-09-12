@@ -33,6 +33,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import classify as classify_mod          # noqa: E402
+import kdc_table                        # noqa: E402
 import ingest                            # noqa: E402
 import leejaechul                        # noqa: E402
 import marc                              # noqa: E402
@@ -336,6 +337,26 @@ def assign_author_mark(book: BookInput, cls: Classification, holdings: Holdings,
     return mark.mark
 
 
+def _apply_final_kdc(cls: Classification, book: BookInput, result: Result) -> None:
+    """사서가 확정한 분류번호를 적용한다 — 워커 판단보다 우선한다.
+
+    번호가 같아도 표목은 본표 표기로 다시 적는다. 워커가 붙인 표목이 본표와 다르면
+    FN-03.1 검증이 계속 걸리는데, 사서가 그 번호를 확정했다면 표목 쪽을 맞춰야 한다.
+    """
+    final = (book.kdc_final or "").strip()
+    if not final:
+        return
+    label, _level = kdc_table.lookup(kdc_table.load(), final)
+    if final != cls.kdc:
+        cls.kdc_alternatives = [cls.kdc] + list(cls.kdc_alternatives)
+        cls.kdc = final
+    cls.kdc_path = (f"{final} {label}".strip() + " (사서 확정)")
+    cls.confidence = "high"
+    result.notes.append(
+        f"분류 {final}: 사서 확정값 적용" + (f" — 본표 표목 '{label}'" if label else "")
+    )
+
+
 def _fill_translation(cls: Classification, book: BookInput, result: Result) -> None:
     """번역서인데 원어가 비어 있으면 웹 조사 결과에서 메운다.
 
@@ -437,6 +458,7 @@ def main() -> int:
             continue
 
         cls = Classification(**data)
+        _apply_final_kdc(cls, book, result)
         _fill_translation(cls, book, result)
         result.classification = cls
         result.needs_info += list(cls.needs_info)

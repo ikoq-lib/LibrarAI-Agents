@@ -25,6 +25,14 @@ import kdc_table  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 CACHE = HERE / "cache" / "classify"
+POLICY = HERE / "data" / "kdc_policy.json"
+
+
+def load_policy() -> dict:
+    """자관 분류 정책 — 미사용 기호와 사서가 인정한 표목."""
+    if not POLICY.exists():
+        return {"unused_numbers": {}, "accepted_headings": {}}
+    return json.loads(POLICY.read_text(encoding="utf-8"))
 
 # 어문학 강목 → 원작 언어
 LANG_BY_CLASS = {
@@ -63,13 +71,27 @@ def _path_label(kdc_path: str) -> str:
 def check(row: dict, cls: dict, table: dict, batch: list[dict]) -> list[tuple[str, str]]:
     """(판정, 사유) 목록. 판정은 FAIL / WARN / INFO."""
     out: list[tuple[str, str]] = []
-    kdc = (cls.get("kdc") or row.get("KDC") or "").strip()
+    # 처리현황의 KDC가 최종값이다. 분류 캐시는 워커가 처음 낸 값이라, 사서 확정이나
+    # 재작업이 반영되기 전 상태일 수 있다(2026-09-12: 확정값 6건이 옛 번호로 검증됐다).
+    kdc = (row.get("KDC") or cls.get("kdc") or "").strip()
     if not kdc:
         return [("FAIL", "분류번호 없음")]
+
+    # 사서가 확정한 번호는 표목까지 본표 표기로 다시 적히므로 대조 대상이 아니다
+    if "사서 확정값 적용" in (row.get("메모") or ""):
+        return [("INFO", f"사서 확정 분류 {kdc} — 검증 대상 아님")]
+
+    policy = load_policy()
+    unused = policy.get("unused_numbers", {})
+    if kdc in unused:
+        out.append(("FAIL", f"자관 미사용 기호 {kdc} — {unused[kdc]}"))
 
     # ① 표목 대조
     label, level = kdc_table.lookup(table, kdc)
     said = _path_label(cls.get("kdc_path", ""))
+    accepted = (policy.get("accepted_headings", {}).get(kdc) or {}).get("labels", [])
+    if said and any(_norm(said) == _norm(x) for x in accepted):
+        said = label          # 사서가 타당하다고 인정한 표목은 대조를 통과시킨다
     if level == "none":
         out.append(("FAIL", f"본표에 없는 번호({kdc}) — 조기표 조합이면 근거를 밝힐 것"))
     elif level == "exact" and said:

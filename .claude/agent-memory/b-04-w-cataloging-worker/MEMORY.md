@@ -16,3 +16,4 @@
 - ["없는 번호" 단정 금지](feedback_no_false_absence_claim.md) — 191.16·327.856을 없다고 주장했으나 본표에 실재, 부재 주장 전 발췌에서 직접 확인
 - [도치형 성 한 글자 저자기호](feedback_one_syllable_surname.md) — 길, 안자나 → 길62소. 성이 한 글자면 이름 첫 글자를 둘째 글자로
 - [비한글 표제의 작품기호](feedback_nonhangul_title_mark.md) — 영문은 한글 발음(AI→에), 숫자는 한자음(64→육)
+- [028은 자관 미사용 기호](kdc_policy_unused_028.md) — 기록관리 미사용, 독서 자료는 029.4. 정책은 data/kdc_policy.json
