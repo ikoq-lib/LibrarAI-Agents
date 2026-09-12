@@ -29,9 +29,10 @@ const src = [
   grab("b02NormalizeVerdict"),
   grab("extractB02Requests"),
   grab("B02_STATED_COUNT_PATTERNS", "\n      ];"),
+  grab("pruneVerifiedSeojiItems"),
   grab("correctB02StatedCounts"),
   grab("summarizeB02Verdicts"),
-  "module.exports = { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts, correctB02StatedCounts };",
+  "module.exports = { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts, correctB02StatedCounts, pruneVerifiedSeojiItems };",
 ].join("\n");
 
 // summarizeB02Verdicts 는 B-03 인계용 배치 레지스트리(b01RegisterBatch)를 부른다.
@@ -45,7 +46,7 @@ const resetBatch = () => { lastBatch = null; };
 
 const mod = { exports: {} };
 new Function("module", "exports", "b01RegisterBatch", src)(mod, mod.exports, fakeRegister);
-const { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts, correctB02StatedCounts } = mod.exports;
+const { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts, correctB02StatedCounts, pruneVerifiedSeojiItems } = mod.exports;
 
 /** 웹앱이 실제로 붙이는 신청 목록 블록과 같은 모양을 만든다. */
 const listBlock = (n, startId = 1) => {
@@ -352,4 +353,51 @@ test("서술을 고치면 확인 필요에 알린다", () => {
   assert.match(out, /구입 대상 1건은 B-03으로 넘깁니다/);
   assert.match(out, /서술의 건수를 집계값으로 정정/);
   assert.match(out, /99건 → 1건/);
+});
+
+// ---------------------------------------------------------------------------
+// SEOJI 재조회 가드 — 프롬프트가 지켜지지 않는 턴을 코드가 막는다
+// ---------------------------------------------------------------------------
+
+const seojiReq = (items) => ({ items });
+
+test("전부 확정된 목록이면 조회 자체를 건너뛴다", () => {
+  // 실측(2026-09-12): 25건이 모두 (SEOJI확정)인데 모델이 25건을 조회 요청했다.
+  const requested = extractB02Requests(msgsWith(listBlock(3)));
+  const req = seojiReq([{ query_id: "q-1", isbn: "9788900000000" }, { query_id: "q-2", isbn: "9788900000001" }]);
+  assert.equal(pruneVerifiedSeojiItems(req, requested), null);
+});
+
+test("확정 건만 걷어내고 미확인 건은 남긴다", () => {
+  const requested = extractB02Requests(msgsWith(listBlock(3)));
+  const req = seojiReq([
+    { query_id: "q-1", isbn: "9788900000000" },          // 목록에 있고 확정 → 제거
+    { query_id: "q-2", isbn: "9791111111111" },          // 목록 밖(사서 직접 입력) → 유지
+  ]);
+  const out = pruneVerifiedSeojiItems(req, requested);
+  assert.deepEqual(out.items.map(i => i.query_id), ["q-2"]);
+});
+
+test("ISBN 없이 서명으로 온 요청도 확정 건이면 걷어낸다", () => {
+  const requested = extractB02Requests(msgsWith(listBlock(2)));
+  const out = pruneVerifiedSeojiItems(seojiReq([{ query_id: "q-1", title: "책 1" }]), requested);
+  assert.equal(out, null);
+});
+
+test("(미확인) 표시 건은 확정으로 보지 않는다", () => {
+  const block = `[B-02 희망도서 주간 신청 목록 — 2026년 9월 2주차 (9.7~9.13)]
+총 1건 / 신청자 1명
+
+1. [w-1] 책 1 | 저자 | 출판사 | 15,000원 | 무선제본(미확인) | ISBN: 9788900000000 | 신청자 테스트1(30세 남·성인, 이번 달 누계 1권) | 접수 2026-09-07 10:00`;
+  const requested = extractB02Requests(msgsWith(block));
+  assert.equal(requested.ids.get("w-1").formatVerified, false);
+  const out = pruneVerifiedSeojiItems(seojiReq([{ query_id: "q-1", isbn: "9788900000000" }]), requested);
+  assert.deepEqual(out.items.map(i => i.query_id), ["q-1"]);   // 그대로 조회한다
+});
+
+test("목록이 아예 없으면 요청을 그대로 통과시킨다", () => {
+  // 사서가 신청 건을 직접 입력한 대화 — 확정값이 없으니 원래대로 조회해야 한다.
+  const requested = extractB02Requests([{ role: "user", content: "ISBN 9788900000000 확인해줘" }]);
+  const req = seojiReq([{ query_id: "q-1", isbn: "9788900000000" }]);
+  assert.equal(pruneVerifiedSeojiItems(req, requested), req);
 });

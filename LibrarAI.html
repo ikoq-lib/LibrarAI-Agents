@@ -1140,8 +1140,14 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 - FN-06 이용자 안내 문구 초안 생성 (반려 건)
 - FN-07 월간 신청 현황 보고
 
-## R-04 포맷 자동 판정 (SEOJI 조회 — 필수, 절대 추측하지 않음)
-2026-07-18부로 R-04의 전자책·부적합 제본형태 여부는 추측하지 말고 SEOJI(국립중앙도서관 서지정보유통지원시스템) 조회로 판정합니다. 다만 2026-09-12부로 **주간 신청 목록에 제본형태가 '(SEOJI확정)'으로 표시된 건은 이미 SEOJI 수집분에서 온 확정값이므로 다시 조회하지 마십시오** — 그 값이 '무선제본'·'양장본'·'보드북' 중 하나면 R-04 통과, 그 밖이면(중철제본·스프링제본·지도·기타 등) R-04(부적합 제본형태)로 반려하면 됩니다. 이 목록은 종이책만 수집한 것이라 전자책은 애초에 들어오지 않으므로 ebookYn도 따로 확인할 필요가 없습니다. 조회가 필요한 것은 '(미확인)'으로 표시된 건과 목록 밖에서 사서가 직접 입력한 신청 건뿐입니다. 그런 건이 하나라도 있으면, 아직 이번 대화에서 조회하지 않은 그 건들의 ISBN(있으면 우선) 또는 서명만 모아 아래 형식의 조회 요청 블록을 그대로 출력하십시오(다른 설명 없이, 코드블록 없이). 조회할 건이 하나도 없으면 이 블록을 출력하지 말고 곧바로 판정으로 넘어가십시오:
+## R-04 포맷 판정 (대부분 조회가 필요 없습니다)
+R-04(전자책·비도서·부적합 제본형태)는 절대 추측하지 않습니다. 다만 근거는 두 갈래이고, **대부분은 이미 손에 있습니다.**
+
+**① 제본형태가 '(SEOJI확정)'으로 표시된 건 — 조회하지 마십시오.** 국립중앙도서관 수집분에서 온 확정값이라 다시 물어볼 것이 없습니다. 그 값이 '무선제본'·'양장본'·'보드북' 중 하나면 R-04 통과, 그 밖이면(중철제본·스프링제본·지도·기타 등) R-04(부적합 제본형태)로 반려합니다. 이 목록은 종이책만 수집한 것이라 전자책은 애초에 들어오지 않으므로 ebookYn도 확인할 필요가 없습니다.
+
+**② '(미확인)' 표시 건과 목록 밖에서 사서가 직접 입력한 신청 건 — 이때만 조회합니다.** 그런 건이 하나라도 있으면 그 건들의 ISBN(있으면 우선) 또는 서명만 모아 아래 블록을 그대로 출력하십시오(다른 설명 없이, 코드블록 없이).
+
+**주간 신청 목록이 전부 '(SEOJI확정)'이면 이 블록을 아예 출력하지 마십시오.** 그대로 판정으로 넘어가면 됩니다. (①에 해당하는 건을 블록에 담아도 시스템이 걸러내므로 조회되지 않습니다 — 턴만 한 번 낭비됩니다.)
 
 ===SEOJI_FORMAT_QUERY===
 {"items": [{"query_id": "q-1", "isbn": "<ISBN, 없으면 생략>", "title": "<서명, ISBN 없을 때만>"}]}
@@ -5844,6 +5850,8 @@ ${FILE_DOWNLOAD_RULE}
               title: hit[2].trim(),
               author: /미상|^$/.test(author) ? "" : author,
               isbn: (isbnCell.match(/\d{13}/) || [""])[0],
+              // 제본형태가 SEOJI 수집분에서 온 확정값이면 R-04 재조회가 필요 없다.
+              formatVerified: /\(SEOJI확정\)/.test(line),
             });
             const who = line.match(/신청자\s+([^(|]+)\(/);
             if (who) patrons.add(who[1].trim());
@@ -5863,6 +5871,32 @@ ${FILE_DOWNLOAD_RULE}
         ["수동", /((?:수동\s*검토|MANUAL_REVIEW)\s*[:：]?\s*)(\d+)(\s*건)/g],
         ["보류", /(보류\s*[:：]?\s*)(\d+)(\s*건)/g],
       ];
+
+      /**
+       * SEOJI 포맷 조회 요청에서 이미 제본형태가 확정된 건을 걷어낸다.
+       * 남는 게 없으면 null 을 돌려 왕복 자체를 건너뛴다(모델 턴 하나와 외부 호출 수십 회가 준다).
+       * 목록에 없는 건(사서가 직접 입력한 신청)은 확정값이 없으므로 그대로 남긴다.
+       */
+      const pruneVerifiedSeojiItems = (req, requested) => {
+        const verifiedIsbn = new Set();
+        const verifiedTitle = new Set();
+        requested.ids.forEach(bib => {
+          if (!bib.formatVerified) return;
+          if (bib.isbn) verifiedIsbn.add(bib.isbn);
+          if (bib.title) verifiedTitle.add(bib.title.replace(/\s/g, ""));
+        });
+        if (!verifiedIsbn.size && !verifiedTitle.size) return req;
+
+        const items = req.items.filter(it => {
+          const isbn = String(it.isbn || "").replace(/[^0-9]/g, "");
+          if (isbn && verifiedIsbn.has(isbn)) return false;
+          const title = String(it.title || "").replace(/\s/g, "");
+          if (!isbn && title && verifiedTitle.has(title)) return false;
+          return true;
+        });
+        if (!items.length) return null;
+        return { ...req, items };
+      };
 
       /** 서술 속 라벨 붙은 건수를 집계값으로 맞춘다. 고친 항목 목록을 함께 돌려준다. */
       const correctB02StatedCounts = (text, truth) => {
@@ -6001,10 +6035,14 @@ ${FILE_DOWNLOAD_RULE}
           if (shoppingReq) reply = await roundTrip("네이버 쇼핑 조회", shoppingReq, runShoppingQuery);
         }
         if (targetId === "b02-wishlist") {
+          const requested = extractB02Requests(msgs);
           const seojiReq = parseSeojiFormatQueryBlock(reply);
-          if (seojiReq) reply = await roundTrip("SEOJI 포맷 조회", seojiReq, runB02SeojiFormatQuery);
+          // 제본형태가 이미 확정된 건까지 조회하지 않는다. 프롬프트로 막아뒀지만 모델이
+          // 지키지 않는 턴이 있어(2026-09-12 실측: 25건 전부 확정인데 25회 왕복) 코드로 거른다.
+          const pruned = seojiReq ? pruneVerifiedSeojiItems(seojiReq, requested) : null;
+          if (pruned) reply = await roundTrip("SEOJI 포맷 조회", pruned, runB02SeojiFormatQuery);
           // SEOJI 왕복 뒤 최종 답변에 판정 블록이 실리므로 집계는 반드시 그 다음이다.
-          reply = summarizeB02Verdicts(reply, extractB02Requests(msgs));
+          reply = summarizeB02Verdicts(reply, requested);
         }
         if (targetId === "b01-acquisition") {
           const pool = extractB01Pool(msgs);
