@@ -1156,10 +1156,24 @@ C-03 프로그램안내 에이전트가 키오스크 질의를 위해 조회하�
 - 반려 안내 문구는 초안만 제공하며 발송은 사서가 직접 합니다
 - 모든 응답은 한국어로 작성합니다
 
+## 판정 결과 출력 형식 (건수는 세지 마십시오)
+반려 기준 판정을 마쳤으면 건별 판정을 아래 구분자 블록으로 반드시 함께 출력하십시오. 시스템이 이 블록을 읽어 합계를 계산하고 사서에게 보여줄 집계표를 자동으로 붙입니다. 블록은 화면에서 집계표로 대체되므로 사서에게 그대로 보이지 않습니다.
+
+===판정시작===
+w-12|구입|
+w-13|반려|R-02 자격증·수험서
+w-14|수동|R-06 우량만화 여부 확인 필요
+w-15|보류|R-01 B-03 복본 회신 대기
+===판정끝===
+
+- 한 줄에 한 건, 세로줄로 구분해 "식별자|판정|사유" 순서로 씁니다. 식별자는 신청 목록의 [w-N] 을 그대로 씁니다.
+- 판정은 **구입 · 반려 · 수동 · 보류** 네 가지만 씁니다. 다른 말(통과·승인·MANUAL_REVIEW 등)을 쓰지 마십시오.
+- 반려는 사유 맨 앞에 적용한 R-코드를 씁니다(R-02 형식). 여러 기준에 걸리면 먼저 적용한 코드를 앞에 둡니다.
+- 이번 주 신청 목록의 모든 건을 빠짐없이 한 번씩 넣습니다. 목록에 없는 식별자를 만들어 넣지 마십시오.
+
 ## 주간 보고 출력 형식
 [희망도서 주간 처리 현황 — YYYY년 N주차 (M.D~M.D)]
-총 신청: N건 / 구입 대상: N건 → B-01 전달 완료
-반려 사유별 건수: [...] / 수동 검토 필요: N건`;
+건별 판정 근거와 사서 확인 요청 사항을 서술로 정리하되, **총 신청·구입 대상·반려·수동 검토의 건수를 직접 세어 쓰지 마십시오.** 그 숫자는 시스템이 판정 블록에서 계산해 "주간 처리 집계"로 붙입니다. 서술에서 합계를 언급해야 하면 "아래 집계표 참조"라고 쓰십시오. (2026-09-12: 본문 표는 25건이 정확한데 요약만 반려 10·수동 7로 어긋난 사례가 있었습니다. 개별 건의 판정과 사유 서술이 사서에게 필요한 부분이고, 산술은 시스템 몫입니다.)`;
 
     const B03_SYSTEM_PROMPT = `당신은 B-03 복본 에이전트입니다. 도서 구입 후보가 발생할 때마다 기존 장서와의 중복(복본) 여부를 판정하는 D1 장서 도메인 공통 도구 에이전트입니다. B-01 신간 후보와 B-02 희망도서 신청이 구입 확정되기 전 반드시 거쳐가는 관문이며, 복본 확정 건에는 대출·예약 실적 근거로 추가 구입 필요성 의견까지 제시합니다.
 
@@ -5774,6 +5788,105 @@ ${FILE_DOWNLOAD_RULE}
       // targetId의 응답(reply)에 실데이터 조회 블록이 있으면 프록시 API 왕복 후 최종 응답으로 치환한다.
       // runDmChain / sendMessage / chief 디스패치 러너 세 경로가 공유한다.
       // prompt에는 호출 경로별 접미사(ORCHESTRATION_HITL_SUFFIX 등)가 이미 포함된 상태로 받는다.
+      // ── B-02 주간 처리 집계 ───────────────────────────────────────────────
+      // 모델에게 건수를 세게 하지 않는다. 2026-09-12 실측에서 본문 표는 25건이 정확한데
+      // 하단 요약만 "반려 10 / 수동 7"(실제 9 / 8)로 어긋났다 — 사서가 요약만 보면 틀린 수치를
+      // 그대로 가져간다. 그래서 모델은 건별 판정만 내고, 합계는 여기서 코드가 센다.
+      const B02_VERDICT_RE = /===판정시작===([\s\S]*?)===판정끝===/;
+      const B02_VERDICT_HEADER_KEYS = new Set(["식별자", "건", "판정", "id", "번호"]);
+
+      // 모델이 쓰는 표기 흔들림을 네 갈래로 모은다. 여기 없는 말은 알 수 없음으로 남겨
+      // 조용히 특정 갈래에 합산되지 않게 한다.
+      const b02NormalizeVerdict = (raw) => {
+        const v = String(raw || "").replace(/\s|\*/g, "");
+        if (/^(구입|구입대상|통과|승인|적합)$/.test(v)) return "구입";
+        if (/^(반려|부적합|제외)$/.test(v)) return "반려";
+        if (/^(수동|수동검토|MANUAL_REVIEW|검토|확인요청)$/i.test(v)) return "수동";
+        if (/^(보류|대기|B-03회신대기)$/.test(v)) return "보류";
+        return null;
+      };
+
+      /** 주입한 신청 목록 블록에서 식별자·신청자를 되읽는다. 판정 교차 검증의 기준이 된다. */
+      const extractB02Requests = (msgs) => {
+        const ids = new Map();   // w-73 → 제목
+        const patrons = new Set();
+        let headerTotal = null;
+        msgs.forEach(m => {
+          if (typeof m.content !== "string") return;
+          if (!m.content.includes("[B-02 희망도서 주간 신청 목록")) return;
+          const head = m.content.match(/총\s*(\d+)건\s*\/\s*신청자\s*(\d+)명/);
+          if (head) headerTotal = { 신청: Number(head[1]), 신청자: Number(head[2]) };
+          m.content.split("\n").forEach(line => {
+            const hit = line.match(/^\s*\d+\.\s*\[(w-\d+)\]\s*([^|]+)\|/);
+            if (!hit) return;
+            ids.set(hit[1], hit[2].trim());
+            const who = line.match(/신청자\s+([^(|]+)\(/);
+            if (who) patrons.add(who[1].trim());
+          });
+        });
+        return { ids, patrons, headerTotal };
+      };
+
+      /**
+       * 판정 블록을 집계해 권위 있는 요약을 덧붙인다. 블록이 없으면 원문 그대로 둔다
+       * (접수만 하거나 월간 현황을 묻는 턴에는 판정 자체가 없다).
+       */
+      const summarizeB02Verdicts = (content, requested) => {
+        const hit = content.match(B02_VERDICT_RE);
+        if (!hit) return content;
+
+        const counts = { 구입: 0, 반려: 0, 수동: 0, 보류: 0 };
+        const reasons = new Map();
+        const seen = new Set();
+        const unknownVerdict = [], notInList = [], duplicated = [];
+
+        hit[1].trim().split("\n").forEach(rawLine => {
+          const line = rawLine.trim();
+          if (!line || /^[|\-\s]+$/.test(line)) return;
+          const cells = line.replace(/^\|/, "").replace(/\|$/, "").split("|").map(s => s.trim());
+          const id = (cells[0] || "").replace(/^\[|\]$/g, "");
+          if (!id || B02_VERDICT_HEADER_KEYS.has(id.toLowerCase())) return;
+
+          const verdict = b02NormalizeVerdict(cells[1]);
+          if (!verdict) { unknownVerdict.push(`${id}(${cells[1] || "판정없음"})`); return; }
+          if (seen.has(id)) { duplicated.push(id); return; }
+          seen.add(id);
+          if (requested.ids.size && !requested.ids.has(id)) notInList.push(id);
+
+          counts[verdict]++;
+          // 사유는 맨 앞 R-코드만 센다. 한 건에 여러 코드가 붙으면 첫 코드가 적용 사유다.
+          const code = (cells[2] || "").match(/R-\d{2}/);
+          if (verdict === "반려" && code) reasons.set(code[0], (reasons.get(code[0]) ?? 0) + 1);
+        });
+
+        const total = counts.구입 + counts.반려 + counts.수동 + counts.보류;
+        const listed = requested.ids.size;
+        const missing = listed ? [...requested.ids.keys()].filter(id => !seen.has(id)) : [];
+
+        const lines = [
+          `- 총 신청: ${requested.headerTotal?.신청 ?? listed ?? total}건`
+            + (requested.headerTotal?.신청자 ? ` / 신청자 ${requested.headerTotal.신청자}명` : ""),
+          `- 구입 대상: ${counts.구입}건`,
+          `- 반려: ${counts.반려}건`
+            + (reasons.size ? ` (${[...reasons.entries()].sort().map(([k, v]) => `${k} ${v}`).join(" / ")})` : ""),
+          `- 수동 검토(MANUAL_REVIEW): ${counts.수동}건`,
+        ];
+        if (counts.보류) lines.push(`- 보류(B-03 회신 대기): ${counts.보류}건`);
+        lines.push(`- 판정 합계: ${total}건`);
+
+        const warn = [];
+        if (missing.length) warn.push(`판정 누락 ${missing.length}건 — ${missing.slice(0, 10).join(", ")}${missing.length > 10 ? " 외" : ""}`);
+        if (notInList.length) warn.push(`이번 주 목록에 없는 식별자 ${notInList.length}건 — ${notInList.slice(0, 10).join(", ")}`);
+        if (duplicated.length) warn.push(`중복 판정 ${duplicated.length}건 — ${duplicated.slice(0, 10).join(", ")}`);
+        if (unknownVerdict.length) warn.push(`판정값을 알 수 없는 행 ${unknownVerdict.length}건 — ${unknownVerdict.slice(0, 5).join(", ")}`);
+        if (listed && total !== listed) warn.push(`신청 ${listed}건 중 ${total}건만 판정됨`);
+
+        return content.replace(B02_VERDICT_RE, "").trimEnd()
+          + `\n\n📊 **주간 처리 집계** (시스템 자동 계산 — 모델의 서술과 다르면 이 값이 맞습니다)\n`
+          + lines.join("\n")
+          + (warn.length ? `\n\n⚠ 확인 필요\n${warn.map(w => `- ${w}`).join("\n")}` : "");
+      };
+
       const resolveLeafSideEffects = async (targetId, prompt, msgs, reply) => {
         const roundTrip = async (label, req, runner) => {
           let followUpContent;
@@ -5799,6 +5912,8 @@ ${FILE_DOWNLOAD_RULE}
         if (targetId === "b02-wishlist") {
           const seojiReq = parseSeojiFormatQueryBlock(reply);
           if (seojiReq) reply = await roundTrip("SEOJI 포맷 조회", seojiReq, runB02SeojiFormatQuery);
+          // SEOJI 왕복 뒤 최종 답변에 판정 블록이 실리므로 집계는 반드시 그 다음이다.
+          reply = summarizeB02Verdicts(reply, extractB02Requests(msgs));
         }
         if (targetId === "b01-acquisition") {
           const pool = extractB01Pool(msgs);
