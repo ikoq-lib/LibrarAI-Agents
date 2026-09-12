@@ -198,3 +198,32 @@ test("보류는 별도 줄로만 나오고 없으면 줄 자체가 없다", () =
     extractB02Requests(msgsWith(listBlock(2))));
   assert.ok(!noHold.includes("보류"), "보류 0건인데 줄이 붙었다");
 });
+
+// ---------------------------------------------------------------------------
+// 주차 표기 — 모델이 아니라 코드가 매긴다
+// ---------------------------------------------------------------------------
+
+const weekLabel = (() => {
+  const mod2 = { exports: {} };
+  new Function("module", "exports", grab("b02WeekLabel") + "\nmodule.exports = b02WeekLabel;")(mod2, mod2.exports);
+  return mod2.exports;
+})();
+
+test("월을 넘나드는 주는 그 주 목요일이 속한 달을 따른다", () => {
+  // 2026-08-31 ~ 09-06 은 목요일(09-03)이 9월이라 9월 1주차다.
+  // 실측에서 모델은 09-07 주를 "9월 3주차"라 불렀지만 2주차가 맞다.
+  assert.match(weekLabel("2026-08-31"), /2026년 9월 1주차/);
+  assert.match(weekLabel("2026-09-07"), /2026년 9월 2주차/);
+  assert.match(weekLabel("2026-09-14"), /2026년 9월 3주차/);
+});
+
+test("주차 표기에 실제 기간이 함께 붙는다", () => {
+  assert.match(weekLabel("2026-09-07"), /9\.7~9\.13/);
+  assert.match(weekLabel("2026-09-07"), /2026-09-07 ~ 2026-09-13/);
+});
+
+test("주차가 없거나 형식이 틀리면 원문을 돌려준다", () => {
+  assert.equal(weekLabel(""), "");
+  assert.equal(weekLabel(null), "");
+  assert.equal(weekLabel("2026-13-99"), "2026-13-99");
+});
