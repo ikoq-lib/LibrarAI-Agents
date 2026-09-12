@@ -1190,7 +1190,9 @@ w-15|보류|R-01 B-03 복본 회신 대기
 ## B-03 복본 판정 인계 (R-01)
 R-01(이미 소장)은 B-02가 판정하지 않습니다. 판정 블록에서 **구입·보류**로 남긴 건을 시스템이 모아 복본 검사 배치로 등록하고, 응답 끝에 "복본 검사 배치 ID: B02-YYYYMMDD-N"을 붙여 줍니다. 배치 ID를 직접 만들어 쓰지 마십시오 — 시스템이 부여합니다.
 
-사서에게는 그 배치 ID로 B-03 복본 탭에서 판정을 받으시라고 안내하고, B-03 결과(duplicate / needs_review / new)를 이 대화에 가져오시면 그때 구입 목록을 확정한다고 알리십시오. B-03 결과를 받기 전에 구입 확정이나 B-01 전달을 선언하지 마십시오.`;
+**B-03 판정은 시스템이 자동으로 이어서 실행합니다.** 배치가 만들어지면 시스템이 곧바로 실제 장서 DB를 조회하고 B-03 복본 판정 결과와 "복본 판정 후 구입 확정" 집계를 같은 응답 아래에 붙입니다. 사서에게 B-03 탭으로 가시라고 안내하지 마십시오 — 이미 붙어 있습니다.
+
+그러므로 이 턴에서는 구입 확정 종수나 B-01 전달을 선언하지 마십시오. 아직 복본 판정 전이므로 "구입 후보"까지만 말하고, 확정은 아래 붙는 B-03 결과가 결정합니다. 복본 확정으로 빠지는 건이 있을 수 있다는 점만 언급하면 충분합니다.`;
 
     const B03_SYSTEM_PROMPT = `당신은 B-03 복본 에이전트입니다. 도서 구입 후보가 발생할 때마다 기존 장서와의 중복(복본) 여부를 판정하는 D1 장서 도메인 공통 도구 에이전트입니다. B-01 신간 후보와 B-02 희망도서 신청이 구입 확정되기 전 반드시 거쳐가는 관문이며, 복본 확정 건에는 대출·예약 실적 근거로 추가 구입 필요성 의견까지 제시합니다.
 
@@ -6012,6 +6014,53 @@ ${FILE_DOWNLOAD_RULE}
           + batchNote;
       };
 
+      // ── B-02 → B-03 자동 인계 ─────────────────────────────────────────────
+      // 배치 ID만 만들어 두면 사서가 B-03 탭으로 옮겨가 다시 물어봐야 했다. 주간 처리는
+      // 매번 거치는 관문이라 그 왕복을 시스템이 대신한다.
+      //
+      // B-03에게 조회를 "요청하게" 하지 않고 결과를 미리 넣어 한 턴에 끝낸다. 어차피 배치
+      // 복본 검사는 무조건 DB를 봐야 하므로, 모델이 ===DB_QUERY=== 를 내도록 기다리는 턴은
+      // 값을 만들지 않는다(B-03 탭에서 사서가 직접 물을 때는 기존 2턴 경로가 그대로 남는다).
+      //
+      // 복본 확정 뒤의 최종 구입 종수도 모델에게 빼게 하지 않고 서버 집계로 붙인다.
+      const b02DuplicateHandoff = async (reply, batchId) => {
+        let dup;
+        try {
+          dup = await runBooksQuery({ action: "duplicate_check", batch_id: batchId });
+        } catch (e) {
+          return reply + `\n\n⚠ 복본 검사(B-03) 자동 인계에 실패했습니다: ${e.message}\nB-03 복본 탭에서 배치 ${batchId} 로 직접 판정해 주세요.`;
+        }
+
+        const s = dup.요약 || {};
+        const dupCount = s.복본확정 ?? 0;
+        const reviewCount = s.상세조사필요 ?? 0;
+        const total = dup.총건수 ?? 0;
+        // 복본 확정은 구입에서 빠지고, 상세조사 필요는 사서 확인 전까지 확정하지 않는다.
+        const confirmed = Math.max(total - dupCount - reviewCount, 0);
+
+        let b03Reply;
+        try {
+          b03Reply = await callApi(systemPromptFor("b03-duplicate"), [{
+            role: "user",
+            content: `[B-02 희망도서 주간 구입 후보 복본 판정 요청]\n배치 ${batchId} (${total}종)\n\n`
+              + `아래는 시스템이 이미 실행한 실제 장서 DB 조회 결과입니다. 추가 조회 요청(===DB_QUERY===) 없이 이 결과만으로 판정하십시오.\n\n`
+              + `[DB 조회 결과]\n${JSON.stringify(dup)}`,
+          }]);
+        } catch (e) {
+          // B-03 서술을 못 받아도 판정 자체는 서버가 끝냈다. 숫자만이라도 사서에게 준다.
+          b03Reply = `(B-03 서술 생성 실패: ${e.message} — 아래 집계는 실제 DB 조회 결과입니다.)`;
+        }
+
+        return reply
+          + `\n\n---\n\n🔍 **B-03 복본 판정** (배치 \`${batchId}\` 자동 인계)\n\n${b03Reply}`
+          + `\n\n📊 **복본 판정 후 구입 확정** (시스템 자동 계산)\n`
+          + `- 복본 검사 대상: ${total}종\n`
+          + `- 복본 확정(구입 제외): ${dupCount}종\n`
+          + `- 상세조사 필요(사서 확인 전까지 보류): ${reviewCount}종\n`
+          + `- 구입 확정: ${confirmed}종`
+          + (reviewCount ? `\n\n상세조사 필요 건은 사서 확인 후에야 구입 목록에 들어갑니다. 확인 결과를 알려주시면 B-01 전달본을 확정합니다.` : "");
+      };
+
       const resolveLeafSideEffects = async (targetId, prompt, msgs, reply) => {
         const roundTrip = async (label, req, runner) => {
           let followUpContent;
@@ -6043,6 +6092,9 @@ ${FILE_DOWNLOAD_RULE}
           if (pruned) reply = await roundTrip("SEOJI 포맷 조회", pruned, runB02SeojiFormatQuery);
           // SEOJI 왕복 뒤 최종 답변에 판정 블록이 실리므로 집계는 반드시 그 다음이다.
           reply = summarizeB02Verdicts(reply, requested);
+          // 구입·보류 건이 있어 배치가 만들어졌으면 곧바로 B-03 복본 판정까지 이어붙인다.
+          const batchId = (reply.match(/B02-\d{8}-\d+/) || [])[0];
+          if (batchId) reply = await b02DuplicateHandoff(reply, batchId);
         }
         if (targetId === "b01-acquisition") {
           const pool = extractB01Pool(msgs);

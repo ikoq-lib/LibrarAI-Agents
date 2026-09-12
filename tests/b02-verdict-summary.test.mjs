@@ -32,7 +32,8 @@ const src = [
   grab("pruneVerifiedSeojiItems"),
   grab("correctB02StatedCounts"),
   grab("summarizeB02Verdicts"),
-  "module.exports = { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts, correctB02StatedCounts, pruneVerifiedSeojiItems };",
+  grab("b02DuplicateHandoff"),
+  "module.exports = { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts, correctB02StatedCounts, pruneVerifiedSeojiItems, b02DuplicateHandoff };",
 ].join("\n");
 
 // summarizeB02Verdicts 는 B-03 인계용 배치 레지스트리(b01RegisterBatch)를 부른다.
@@ -45,8 +46,14 @@ const fakeRegister = (items, prefix) => {
 const resetBatch = () => { lastBatch = null; };
 
 const mod = { exports: {} };
-new Function("module", "exports", "b01RegisterBatch", src)(mod, mod.exports, fakeRegister);
-const { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts, correctB02StatedCounts, pruneVerifiedSeojiItems } = mod.exports;
+let dupResult = null, dupError = null, b03Text = "B-03 판정 서술", b03Error = null, lastB03Prompt = null;
+const fakeBooksQuery = async () => { if (dupError) throw new Error(dupError); return dupResult; };
+const fakeCallApi = async (_prompt, msgs) => { lastB03Prompt = msgs[0].content; if (b03Error) throw new Error(b03Error); return b03Text; };
+const fakeSystemPromptFor = () => "B-03 프롬프트";
+
+new Function("module", "exports", "b01RegisterBatch", "runBooksQuery", "callApi", "systemPromptFor", src)(
+  mod, mod.exports, fakeRegister, fakeBooksQuery, fakeCallApi, fakeSystemPromptFor);
+const { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts, correctB02StatedCounts, pruneVerifiedSeojiItems, b02DuplicateHandoff } = mod.exports;
 
 /** 웹앱이 실제로 붙이는 신청 목록 블록과 같은 모양을 만든다. */
 const listBlock = (n, startId = 1) => {
@@ -400,4 +407,68 @@ test("목록이 아예 없으면 요청을 그대로 통과시킨다", () => {
   const requested = extractB02Requests([{ role: "user", content: "ISBN 9788900000000 확인해줘" }]);
   const req = seojiReq([{ query_id: "q-1", isbn: "9788900000000" }]);
   assert.equal(pruneVerifiedSeojiItems(req, requested), req);
+});
+
+// ---------------------------------------------------------------------------
+// B-02 → B-03 자동 인계
+// ---------------------------------------------------------------------------
+
+const setDup = (복본확정, 상세조사필요, 신규) => {
+  dupResult = {
+    batch_id: "B02-20260912-1",
+    총건수: 복본확정 + 상세조사필요 + 신규,
+    요약: { 복본확정, 상세조사필요, 신규 },
+  };
+  dupError = null; b03Error = null;
+};
+
+test("B-03 판정 결과와 구입 확정 집계를 이어붙인다", async () => {
+  setDup(2, 1, 9);
+  const out = await b02DuplicateHandoff("B-02 판정 본문", "B02-20260912-1");
+  assert.match(out, /^B-02 판정 본문/);            // 원문을 지우지 않는다
+  assert.match(out, /B-03 복본 판정/);
+  assert.match(out, /B-03 판정 서술/);
+  assert.match(out, /복본 검사 대상: 12종/);
+  assert.match(out, /복본 확정\(구입 제외\): 2종/);
+  assert.match(out, /상세조사 필요.*: 1종/);
+  assert.match(out, /구입 확정: 9종/);
+});
+
+test("복본·상세조사가 없으면 전량 구입 확정이다", async () => {
+  setDup(0, 0, 12);
+  const out = await b02DuplicateHandoff("본문", "B02-20260912-1");
+  assert.match(out, /구입 확정: 12종/);
+  assert.ok(!out.includes("사서 확인 후에야"), "보류가 없는데 확인 안내가 붙었다");
+});
+
+test("상세조사 필요 건이 있으면 확정 전 사서 확인을 요청한다", async () => {
+  setDup(0, 3, 9);
+  const out = await b02DuplicateHandoff("본문", "B02-20260912-1");
+  assert.match(out, /구입 확정: 9종/);            // 상세조사 건은 확정에서 뺀다
+  assert.match(out, /사서 확인 후에야 구입 목록에 들어갑니다/);
+});
+
+test("B-03에게 DB 결과를 미리 줘 한 턴에 끝낸다", async () => {
+  setDup(1, 0, 5);
+  await b02DuplicateHandoff("본문", "B02-20260912-1");
+  assert.match(lastB03Prompt, /\[DB 조회 결과\]/);
+  assert.match(lastB03Prompt, /추가 조회 요청\(===DB_QUERY===\) 없이/);
+  assert.match(lastB03Prompt, /배치 B02-20260912-1 \(6종\)/);
+});
+
+test("DB 조회가 실패하면 본문을 살리고 수동 경로를 안내한다", async () => {
+  setDup(0, 0, 3); dupError = "배치를 찾을 수 없습니다";
+  const out = await b02DuplicateHandoff("본문", "B02-20260912-1");
+  assert.match(out, /^본문/);
+  assert.match(out, /자동 인계에 실패/);
+  assert.match(out, /배치를 찾을 수 없습니다/);
+  assert.match(out, /B-03 복본 탭에서 배치 B02-20260912-1 로 직접 판정/);
+});
+
+test("B-03 서술이 실패해도 서버가 낸 집계는 그대로 준다", async () => {
+  setDup(2, 0, 4); b03Error = "모델 응답 실패";
+  const out = await b02DuplicateHandoff("본문", "B02-20260912-1");
+  assert.match(out, /B-03 서술 생성 실패/);
+  assert.match(out, /복본 확정\(구입 제외\): 2종/);
+  assert.match(out, /구입 확정: 4종/);   // 판정 자체는 서버가 끝냈으므로 숫자는 살아 있다
 });
