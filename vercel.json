@@ -8,6 +8,7 @@
     "api/naver-shopping.js": { "maxDuration": 30 },
     "api/seoji.js": { "maxDuration": 30 },
     "api/books.js": { "maxDuration": 30 },
+    "api/wishlist-requests.js": { "maxDuration": 30 },
     "api/budget.js": { "maxDuration": 15 }
   }
 }

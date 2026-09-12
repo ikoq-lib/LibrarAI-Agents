@@ -1,0 +1,80 @@
+name: B-02 희망도서 주간 신청 생성
+
+# GitHub Actions 의 cron 은 UTC 로만 해석된다(schedule 에 timezone 키는 지원하지 않는다).
+# UTC 월요일 21:00 = KST 화요일 06:00 — B-02 는 월~일 접수분을 화요일에 처리하므로,
+# 화요일 업무 시작 전에 직전 월~일 접수분이 만들어져 있어야 한다.
+#
+# 같은 새벽에 도는 SEOJI 수집(UTC 21:00 매일)과 시각이 겹치지만, 이 봇은 이미 적재된
+# book_catalog 만 읽고 SEOJI API 는 건드리지 않아서 서로 간섭하지 않는다.
+# 다만 그날치 신간이 아직 안 들어왔을 수는 있는데, 대상이 "발행 30일 경과분"이라 무관하다.
+on:
+  schedule:
+    - cron: "0 21 * * 1"
+  workflow_dispatch:
+    inputs:
+      week:
+        description: "대상 주차의 월요일(YYYY-MM-DD). 비우면 직전 월~일"
+        required: false
+        type: string
+      count:
+        description: "생성 권수(비우면 20~30 무작위)"
+        required: false
+        type: string
+      force:
+        description: "이미 있는 주차를 지우고 다시 생성"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# 같은 주차를 두 번 만들지 않도록 겹치면 기다린다.
+concurrency:
+  group: b02-wishlist-generate
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 저장소 가져오기
+        uses: actions/checkout@v4
+
+      - name: Node.js 준비
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 생성기 테스트
+        run: npm run test:wishlist
+
+      - name: 희망도서 주간 신청 생성
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.week }}" ]; then ARGS="$ARGS --week ${{ inputs.week }}"; fi
+          if [ -n "${{ inputs.count }}" ]; then ARGS="$ARGS --count ${{ inputs.count }}"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
+          node scripts/generate-wishlist-requests.mjs $ARGS
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          WISHLIST_MIN_BOOKS: "20"
+          WISHLIST_MAX_BOOKS: "30"
+          WISHLIST_PATRON_POOL: "40"
+          WISHLIST_AGE_DAYS: "30"
+
+      - name: 실패 알림용 요약
+        if: failure()
+        run: |
+          echo "### B-02 희망도서 주간 생성 실패" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "이 주차는 신청 건이 비어 있으므로 B-02 가 처리할 목록이 없습니다." >> $GITHUB_STEP_SUMMARY
+          echo "workflow_dispatch 에서 week 에 해당 주 월요일을 넣어 수동 생성하세요." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "후보 소진이 원인이면(발행 30일 경과·미신청 도서 부족) SEOJI 수집 워크플로가" >> $GITHUB_STEP_SUMMARY
+          echo "정상인지 먼저 확인하세요 — 후보 풀의 원본입니다." >> $GITHUB_STEP_SUMMARY

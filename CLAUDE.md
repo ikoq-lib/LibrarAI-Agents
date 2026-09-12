@@ -36,6 +36,21 @@ LibrarAI is a Korean public library AI management system. The three agents below
 
 The reference implementation for the Lifelong Learning Agent is at `../library/lifelong-learning-agent_1.jsx.txt`.
 
+## 액션 봇 (GitHub Actions → Supabase)
+
+Supabase 를 채우는 스케줄 봇이 둘 있다. 둘 다 `SUPABASE_DB_PASSWORD` 시크릿으로 직접 접속하고, 워크플로가 적재 전에 파서 테스트를 먼저 돌린다.
+
+| 봇 | 워크플로 | 주기 | 적재 테이블 |
+|---|---|---|---|
+| SEOJI 종이책 신간 수집 | `.github/workflows/harvest-seoji-catalog.yml` | 매일 UTC 21:00 (KST 06:00) | `book_catalog` |
+| B-02 희망도서 주간 신청 생성 | `.github/workflows/generate-wishlist-requests.yml` | 매주 월 UTC 21:00 (KST 화 06:00) | `wishlist_requests`, `wishlist_patrons` |
+
+- **cron 은 UTC 로만 해석된다** — `schedule` 에 timezone 키는 없다. 그리고 GitHub Actions 스케줄은 상시 1~2시간 지연되므로, 정시 실행을 전제로 설계하지 말 것.
+- 희망도서 봇은 SEOJI API 를 건드리지 않는다. 이미 적재된 `book_catalog` 에서 **발행 30일 경과분을 가중치 없이 무작위로** 20~30권 뽑는다. 정기수서(B-01)의 5축 점수는 여기에 적용하지 않는다 — 이용자 신청은 그 축과 무관하게 흩어진다.
+- **반려 대상(수험서·5만원 초과·부적합 제본·5년 초과)을 걸러내지 않는다.** 자연 비율로 섞여 들어와야 B-02 의 R-01~R-10 판정이 일한다.
+- 신청자는 `wishlist_patrons` 고정 풀(40명)에서 재사용한다. 매주 새 이름을 만들면 FN-04(1인 월 3권 한도) 검증이 항상 통과해 무의미해진다.
+- 스키마 단일 출처는 `db/wishlist_requests.sql`. 신청자 이름이 들어가는 테이블이라 `loans` 와 같이 **anon 공개 읽기 정책을 만들지 않는다** — 웹앱은 `api/wishlist-requests.js` 를 통해서만 읽고, 그 함수가 실명을 마스킹한 라벨로 내려보낸다.
+
 ## Key Domain Context
 
 - **KDC**: Korean Decimal Classification — used for collection statistics and filtering
