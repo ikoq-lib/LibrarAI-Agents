@@ -28,8 +28,10 @@ const src = [
   grab("B02_VERDICT_HEADER_KEYS", ";"),
   grab("b02NormalizeVerdict"),
   grab("extractB02Requests"),
+  grab("B02_STATED_COUNT_PATTERNS", "\n      ];"),
+  grab("correctB02StatedCounts"),
   grab("summarizeB02Verdicts"),
-  "module.exports = { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts };",
+  "module.exports = { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts, correctB02StatedCounts };",
 ].join("\n");
 
 // summarizeB02Verdicts 는 B-03 인계용 배치 레지스트리(b01RegisterBatch)를 부른다.
@@ -43,7 +45,7 @@ const resetBatch = () => { lastBatch = null; };
 
 const mod = { exports: {} };
 new Function("module", "exports", "b01RegisterBatch", src)(mod, mod.exports, fakeRegister);
-const { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts } = mod.exports;
+const { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts, correctB02StatedCounts } = mod.exports;
 
 /** 웹앱이 실제로 붙이는 신청 목록 블록과 같은 모양을 만든다. */
 const listBlock = (n, startId = 1) => {
@@ -295,4 +297,59 @@ test("목록에 없는 식별자는 배치에 넣지 않는다", () => {
     extractB02Requests(msgsWith(listBlock(2))));
   assert.deepEqual(lastBatch.items.map(i => i.wishlist_id), ["w-1"]);
   assert.match(out, /목록에 없는 식별자 1건/);   // 배치에서 빠진 사실이 경고로도 드러난다
+});
+
+// ---------------------------------------------------------------------------
+// 서술 속 건수 정정 — 프롬프트로 다 막히지 않는 부분을 코드가 맞춘다
+// ---------------------------------------------------------------------------
+
+const truth = { "총 신청": 25, 구입: 9, 반려: 9, 수동: 7, 보류: 0 };
+
+test("맞는 건수는 그대로 둔다", () => {
+  const r = correctB02StatedCounts("구입 대상 9건에 대해 B-03 판정을 진행합니다.", truth);
+  assert.equal(r.fixed.length, 0);
+  assert.match(r.text, /구입 대상 9건/);
+});
+
+test("틀린 건수는 집계값으로 고치고 무엇을 고쳤는지 남긴다", () => {
+  const r = correctB02StatedCounts("구입 대상 12건에 대해 B-03 판정을 진행합니다.", truth);
+  assert.match(r.text, /구입 대상 9건/);
+  assert.ok(!r.text.includes("12건"));
+  assert.equal(r.fixed.length, 1);
+  assert.match(r.fixed[0], /구입 대상 12건 → 9건/);
+});
+
+test("여러 라벨을 한 번에 맞춘다", () => {
+  const r = correctB02StatedCounts("총 신청 30건 중 반려 10건, 수동 검토 5건입니다.", truth);
+  assert.match(r.text, /총 신청 25건/);
+  assert.match(r.text, /반려 9건/);
+  assert.match(r.text, /수동 검토 7건/);
+  assert.equal(r.fixed.length, 3);
+});
+
+test("라벨 없는 숫자는 건드리지 않는다", () => {
+  // 시스템이 세지 않는 하위 묶음이라 정답을 모른다 — 함부로 고치면 없던 오류를 만든다.
+  const before = "만화류로 추정되는 4건은 사서 판단이 필요합니다. R-02 수험서 4건 포함.";
+  const r = correctB02StatedCounts(before, truth);
+  assert.equal(r.text, before);
+  assert.equal(r.fixed.length, 0);
+});
+
+test("집계표 자체는 정정 대상이 아니다", () => {
+  // 표는 정정 뒤에 붙으므로 본문에 같은 문구가 있어도 표 값은 언제나 집계값이다.
+  const out = summarizeB02Verdicts(
+    verdictBlock(["w-1|구입|", "w-2|구입|", "w-3|반려|R-02"]),
+    extractB02Requests(msgsWith(listBlock(3))));
+  const table = out.slice(out.indexOf("주간 처리 집계"));
+  assert.match(table, /구입 대상: 2건/);
+  assert.match(table, /반려: 1건/);
+});
+
+test("서술을 고치면 확인 필요에 알린다", () => {
+  const out = summarizeB02Verdicts(
+    `구입 대상 99건은 B-03으로 넘깁니다.\n\n===판정시작===\nw-1|구입|\nw-2|반려|R-02\n===판정끝===`,
+    extractB02Requests(msgsWith(listBlock(2))));
+  assert.match(out, /구입 대상 1건은 B-03으로 넘깁니다/);
+  assert.match(out, /서술의 건수를 집계값으로 정정/);
+  assert.match(out, /99건 → 1건/);
 });
