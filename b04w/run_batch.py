@@ -343,6 +343,19 @@ def _fill_translation(cls: Classification, book: BookInput, result: Result) -> N
     잦다(1차 배치 301건 중 21건). 그대로 두면 041·546이 통째로 빠져 번역서 레코드가
     반쪽이 된다. 웹 조사에도 없으면 지어내지 말고 needs_info로 사서에게 넘긴다.
     """
+    # 사서가 판권지로 확인해 입고 목록에 적어 둔 원작 언어가 최우선이다(추정이 아니라 실물 확인값).
+    if book.original_language:
+        supplied = book.original_language.strip()
+        code = marc.LANG_CODE.get(supplied, supplied if len(supplied) == 3 else "")
+        if code:
+            cls.is_translation = True
+            cls.original_language = code
+            cls.original_language_ko = marc.LANG_KO.get(code, supplied)
+            # 워커가 남긴 "원어 확인 필요"는 이 값으로 해소됐으므로 걷어낸다
+            cls.needs_info = [n for n in cls.needs_info
+                              if not re.search(r"원작 언어|원어|041|546", n)]
+            result.notes.append(f"원작 언어 {cls.original_language_ko}: 사서 확인값 적용")
+
     if not cls.is_translation:
         return
     web = book.raw.get("web") or {}

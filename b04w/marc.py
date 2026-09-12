@@ -26,6 +26,12 @@ LANG_KO = {
 }
 
 
+LANG_CODE = {ko: code for code, ko in LANG_KO.items()}
+LANG_CODE.update({"덴마크어": "dan", "노르웨이어": "nor", "히브리어": "heb", "아랍어": "ara",
+                  "폴란드어": "pol", "체코어": "cze", "터키어": "tur", "태국어": "tha",
+                  "인도네시아어": "ind", "라틴어": "lat", "그리스어": "gre", "한국어": "kor"})
+
+
 def _strip_period(text: str) -> str:
     """필드 끝 마침표를 걷어낸다. '2026.' -> '2026', '20 cm.' -> '20 cm'."""
     return re.sub(r"\.\s*$", "", (text or "").strip())
