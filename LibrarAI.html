@@ -120,7 +120,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useRef, useEffect } = React;
+    const { useState, useRef, useEffect, useMemo } = React;
 
     // ── API Config ────────────────────────────────────────────────
     const CHAT_API_URL = window.location.protocol === "file:"
@@ -3209,7 +3209,7 @@ ${extra}
               tpl: doc.tpl || null, kind: doc.kind, format: doc.format,
               skeleton: doc.skeleton || null, note: doc.note || row.note || "",
               title: fillDocTitle(doc.title, period, row) + suffix,
-              status: "pending", body: "", error: "",
+              body: "", error: "",   // status 는 생성 시작 후에만 붙는다(뱃지 없음 = 아직 대상 아님)
             });
           });
         }
@@ -4204,7 +4204,10 @@ ${FILE_DOWNLOAD_RULE}
       const { items, conditions, period } = useMemo(
         () => buildDocChecklist(run, manualCounts), [run, manualCounts]);
 
-      const buildable = items.filter(it => it.format !== "none").map(it => ({ ...it, ...(results[it.key] || {}) }));
+      // 생성 상태를 합친 목록 하나만 쓴다 — 행 렌더링과 집계가 서로 다른 배열을 보면
+      // 완료된 문서가 화면에서는 계속 "대기"로 남는다(2026-09-12 실사용 테스트에서 확인).
+      const merged = items.map(it => ({ ...it, ...(results[it.key] || {}) }));
+      const buildable = merged.filter(it => it.format !== "none");
       const selected = buildable.filter(it => !unchecked[it.key]);
       const done = buildable.filter(it => it.status === "done");
       const failed = buildable.filter(it => it.status === "error");
@@ -4242,7 +4245,7 @@ ${FILE_DOWNLOAD_RULE}
         }
       };
       const groups = [];
-      items.forEach(it => {
+      merged.forEach(it => {
         const label = DM_LABELS[it.group] || it.group || "기타";
         let g = groups.find(x => x.label === label);
         if (!g) { g = { label, items: [] }; groups.push(g); }
@@ -4544,6 +4547,9 @@ ${FILE_DOWNLOAD_RULE}
 - **확정본에 없는 사실을 새로 만들지 마십시오.** 확정본에 "(가정)"으로 표기된 값은 그 표기를 유지한 채 그대로 옮깁니다. 확정본에 없는 수치·일자·명단이 필요한 칸은 "(미정)"으로 두고 문서를 완성합니다.
 - 모든 문서의 첫 줄에 "※ 본 문서는 AI가 생성한 초안이며 담당자 검토 후 결재 상신하십시오."를 넣습니다.
 - 공문서 표기 규칙을 준수합니다 — 날짜 2026. 9. 3. / 시간 24시각제 09:00 / 금액 금221,750원(금이십이만일천칠백오십원) / 항목기호 1. → 가. → 1) → 가) / 붙임 표시문 끝에 2타 띄우고 끝.
+- 금액 한글 표기에 "정"을 붙이지 않습니다 — 금720,000원(금칠십이만원)이며 (금칠십이만원정)이 아닙니다.
+- **예산이 수반되지 않는 문서에는 소요금액·예산과목 항목을 아예 넣지 않습니다.** 금0원 같은 항목을 만들지 마십시오(보고·공고·홍보 문서가 여기 해당합니다).
+- **근거에 없는 명칭을 붙이지 마십시오.** 확정본에 "KDC 8류 21.4%"처럼 번호만 있으면 번호만 옮깁니다. 류 이름·기관명·직위 등을 기억으로 채우면 틀립니다(8류는 문학이고 어학은 7류입니다).
 `;
 
     // R-6 — 한 응답에서 기안문·붙임을 여러 건 뽑아낸다(문서 번들용).
