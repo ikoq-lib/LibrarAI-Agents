@@ -32,8 +32,17 @@ const src = [
   "module.exports = { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts };",
 ].join("\n");
 
+// summarizeB02Verdicts 는 B-03 인계용 배치 레지스트리(b01RegisterBatch)를 부른다.
+// 실물은 localStorage 에 기대므로, 등록 내용을 붙잡아 두는 대역을 주입해 인계까지 검사한다.
+let lastBatch = null;
+const fakeRegister = (items, prefix) => {
+  lastBatch = { items, prefix };
+  return { id: `${prefix}-20260912-1`, items };
+};
+const resetBatch = () => { lastBatch = null; };
+
 const mod = { exports: {} };
-new Function("module", "exports", src)(mod, mod.exports);
+new Function("module", "exports", "b01RegisterBatch", src)(mod, mod.exports, fakeRegister);
 const { b02NormalizeVerdict, extractB02Requests, summarizeB02Verdicts } = mod.exports;
 
 /** 웹앱이 실제로 붙이는 신청 목록 블록과 같은 모양을 만든다. */
@@ -226,4 +235,64 @@ test("주차가 없거나 형식이 틀리면 원문을 돌려준다", () => {
   assert.equal(weekLabel(""), "");
   assert.equal(weekLabel(null), "");
   assert.equal(weekLabel("2026-13-99"), "2026-13-99");
+});
+
+// ---------------------------------------------------------------------------
+// B-03 복본 인계 — 이 경로가 없으면 사서가 목록을 손으로 옮겨야 한다
+// ---------------------------------------------------------------------------
+
+test("신청 목록에서 저자·ISBN 까지 걷는다 (복본 검사에 넘길 값)", () => {
+  const r = extractB02Requests(msgsWith(listBlock(3)));
+  const bib = r.ids.get("w-2");
+  assert.equal(bib.title, "책 2");
+  assert.equal(bib.author, "저자");
+  assert.match(bib.isbn, /^\d{13}$/);
+});
+
+test("구입·보류 건만 복본 검사 배치로 넘긴다", () => {
+  resetBatch();
+  const out = summarizeB02Verdicts(
+    verdictBlock(["w-1|구입|", "w-2|반려|R-02", "w-3|수동|R-06", "w-4|보류|R-01 대기"]),
+    extractB02Requests(msgsWith(listBlock(4))));
+  assert.ok(lastBatch, "배치가 등록되지 않았다");
+  assert.equal(lastBatch.prefix, "B02");
+  assert.deepEqual(lastBatch.items.map(i => i.wishlist_id), ["w-1", "w-4"]);
+  assert.match(out, /복본 검사 배치 ID: `B02-20260912-1`/);
+  assert.match(out, /\(2종\)/);
+});
+
+test("배치 항목에 B-03 조회에 필요한 서지가 실린다", () => {
+  resetBatch();
+  summarizeB02Verdicts(verdictBlock(["w-1|구입|", "w-2|구입|"]),
+    extractB02Requests(msgsWith(listBlock(2))));
+  const it = lastBatch.items[0];
+  assert.equal(it.candidate_id, "c-1");   // B-03 판정 결과가 행과 대응되도록 순번을 붙인다
+  assert.equal(it.wishlist_id, "w-1");
+  assert.equal(it.title, "책 1");
+  assert.equal(it.author, "저자");
+  assert.match(it.isbn, /^\d{13}$/);
+});
+
+test("넘길 건이 없으면 배치를 만들지 않는다", () => {
+  resetBatch();
+  const out = summarizeB02Verdicts(
+    verdictBlock(["w-1|반려|R-02", "w-2|수동|R-06"]),
+    extractB02Requests(msgsWith(listBlock(2))));
+  assert.equal(lastBatch, null, "넘길 게 없는데 빈 배치를 만들었다");
+  assert.ok(!out.includes("복본 검사 배치 ID"));
+});
+
+test("판정 블록이 없는 턴에는 배치를 만들지 않는다", () => {
+  resetBatch();
+  summarizeB02Verdicts("접수만 했습니다.", extractB02Requests(msgsWith(listBlock(3))));
+  assert.equal(lastBatch, null);
+});
+
+test("목록에 없는 식별자는 배치에 넣지 않는다", () => {
+  resetBatch();
+  const out = summarizeB02Verdicts(
+    verdictBlock(["w-1|구입|", "w-999|구입|"]),
+    extractB02Requests(msgsWith(listBlock(2))));
+  assert.deepEqual(lastBatch.items.map(i => i.wishlist_id), ["w-1"]);
+  assert.match(out, /목록에 없는 식별자 1건/);   // 배치에서 빠진 사실이 경고로도 드러난다
 });
