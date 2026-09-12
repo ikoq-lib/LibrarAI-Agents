@@ -127,3 +127,19 @@ def check(record: Record, book: BookInput, cls: Classification,
         )
 
     return problems
+
+
+# 발행지 미확인은 레코드 결함이 아니라 자료·데이터 공백이다. 260 $a를 추정으로 채우지
+# 않는다는 정책의 결과이므로 qa_failed(고쳐야 할 오류)가 아니라 needs_info(사서 확인)로 센다.
+# 2026-09-12 실측: qa_failed 46건 중 40건이 이 사유였고, 진짜 결함이 그 안에 묻혔다.
+PLACE_GAP_MARKERS = (
+    "008/15-17 발행국 부호가 비어 있습니다(발행지 미확인).",
+    "260 $a 발행지를 확인하지 못했습니다(needs_info).",
+)
+
+
+def split_place_gaps(problems: list[str]) -> tuple[list[str], list[str]]:
+    """QA 지적을 (진짜 결함, 발행지 공백)으로 나눈다."""
+    gaps = [p for p in problems if p in PLACE_GAP_MARKERS]
+    failures = [p for p in problems if p not in PLACE_GAP_MARKERS]
+    return failures, gaps

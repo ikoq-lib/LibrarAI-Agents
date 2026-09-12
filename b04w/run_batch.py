@@ -454,7 +454,10 @@ def main() -> int:
             results.append(result)
             continue
         result.record = record
-        result.qa_failures = qa.check(record, book, cls, mark)
+        failures, place_gaps = qa.split_place_gaps(qa.check(record, book, cls, mark))
+        result.qa_failures = failures
+        if place_gaps:
+            result.needs_info = list(result.needs_info) + ["발행지 미확인 — 판권지 확인 필요"]
 
         if result.qa_failures:
             result.status = "qa_failed"
