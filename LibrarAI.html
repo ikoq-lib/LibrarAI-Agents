@@ -9,6 +9,7 @@
   <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
   <script src="hwpx_base_template.js"></script>
   <script src="annual_schedule_data.js"></script>
+  <script src="doc_manifest_data.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
   <style>
     :root {
@@ -3108,6 +3109,119 @@ ${extra}
       });
       return { active, reference };
     };
+    // ── 문서 매니페스트 헬퍼 (doc_manifest_data.js 기반, 설계 5절 · 4단계) ──
+    // 확정본 하나에서 "이번 달에 만들 실행 문서" 목록을 코드가 계산한다. 모델에게
+    // 묻지 않는다 — 주기는 규칙이고, 조건부는 키워드 후보 표시 + 사서 체크로 정한다.
+    const DOC_MANIFEST = typeof DOC_MANIFEST_ROWS !== "undefined" ? DOC_MANIFEST_ROWS : [];
+    // 소식지 통권: 2026-09 = 138호 기준 월 +1
+    const NEWSLETTER_BASE = { year: 2026, month: 9, issue: 138 };
+    const DOC_CONDITIONS = [
+      { name: "강사 있음", words: ["강사", "강사비", "섭외", "위촉"] },
+      { name: "위원회 미구성", words: ["위원회 구성", "신규 위촉"] },
+      { name: "예산 부족", words: ["유용", "잔액 부족", "부족액"] },
+      { name: "웹툰도서 포함", words: ["웹툰", "만화"] },
+    ];
+
+    // "2026-09" → {year, month}. 주간("2026-W36")이면 그 주 목요일이 속한 달을 쓴다.
+    const parseTargetPeriod = (period) => {
+      const mm = String(period || "").match(/^(\d{4})-(\d{2})$/);
+      if (mm) return { year: +mm[1], month: +mm[2], scope: "monthly" };
+      const wm = String(period || "").match(/^(\d{4})-W(\d{1,2})$/);
+      if (wm) {
+        const jan4 = new Date(Date.UTC(+wm[1], 0, 4));
+        const monday = new Date(jan4);
+        monday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() || 7) - 1) + (+wm[2] - 1) * 7);
+        const thu = new Date(monday); thu.setUTCDate(monday.getUTCDate() + 3);
+        return { year: thu.getUTCFullYear(), month: thu.getUTCMonth() + 1, scope: "weekly" };
+      }
+      const now = new Date();
+      return { year: now.getFullYear(), month: now.getMonth() + 1, scope: "monthly" };
+    };
+
+    // 그 달의 주 수 — 첫 월요일 기준 4 또는 5
+    const weeksInMonth = (year, month) => {
+      const last = new Date(year, month, 0).getDate();
+      let count = 0;
+      for (let d = 1; d <= last; d++) if (new Date(year, month - 1, d).getDay() === 1) count++;
+      return count;
+    };
+
+    const repeatMonths = (repeat) => {
+      const m = String(repeat || "").match(/^(quarterly|yearly):\[([\d,\s]+)\]$/);
+      return m ? m[2].split(",").map(x => +x.trim()) : [];
+    };
+
+    // 설계 5.3 수량 계산. manual 은 코드가 계산하지 않는다(사서 입력).
+    const docRowCount = (row, period, conditionsOn) => {
+      const repeat = String(row.repeat || "");
+      if (repeat === "monthly") return period.scope === "weekly" ? 1 : 1;
+      if (repeat === "weekly") return period.scope === "weekly" ? 1 : weeksInMonth(period.year, period.month);
+      if (repeat === "conditional") return conditionsOn[row.condition] ? 1 : 0;
+      if (repeat === "manual") return null;                 // 사서 입력
+      const months = repeatMonths(repeat);
+      return months.includes(period.month) ? 1 : 0;
+    };
+
+    // 확정본 전문에서 조건 키워드를 찾는다 — 후보 표시일 뿐, 포함 여부는 사서가 정한다.
+    const detectConditions = (text) => {
+      const body = String(text || "");
+      const found = {};
+      DOC_CONDITIONS.forEach(c => { found[c.name] = c.words.some(w => body.includes(w)); });
+      return found;
+    };
+
+    const newsletterIssue = (year, month) =>
+      NEWSLETTER_BASE.issue + (year - NEWSLETTER_BASE.year) * 12 + (month - NEWSLETTER_BASE.month);
+
+    const fillDocTitle = (title, period, row) => {
+      const prev = period.month === 1 ? 12 : period.month - 1;
+      const next = period.month === 12 ? 1 : period.month + 1;
+      const quarter = repeatMonths(row.repeat).indexOf(period.month) + 1;
+      return String(title || "")
+        .replace(/\{m2\}/g, String(next))
+        .replace(/\{m0\}/g, String(prev))
+        .replace(/\{m\}/g, String(period.month))
+        .replace(/\{y\}/g, String(period.year))
+        .replace(/\{n\}/g, String(quarter > 0 ? quarter : 1))
+        .replace(/\{half\}/g, period.month <= 6 ? "상반기" : "하반기")
+        .replace(/\{issue\}/g, String(newsletterIssue(period.year, period.month)));
+    };
+
+    // 확정된 run 하나 → 생성 목록 아이템 배열. manualCounts 는 사서가 입력한 수량.
+    const buildDocChecklist = (run, manualCounts = {}) => {
+      if (!run) return { items: [], conditions: {}, period: parseTargetPeriod(null) };
+      const period = parseTargetPeriod(run.target_period);
+      const text = (run.confirmed && run.confirmed.reportText) || run.resultText || "";
+      const conditions = detectConditions(text);
+      const items = [];
+      DOC_MANIFEST.forEach((row, rowIndex) => {
+        const base = docRowCount(row, period, conditions);
+        const manual = base === null;
+        const count = manual ? (manualCounts[`${row.taskName}#${rowIndex}`] || 0) : base;
+        if (!count) return;
+        for (let unit = 1; unit <= count; unit++) {
+          (row.docs || []).forEach((doc, docIndex) => {
+            const suffix = count > 1 ? ` (${unit}/${count})` : "";
+            items.push({
+              key: `${rowIndex}-${unit}-${docIndex}`,
+              rowIndex, taskName: row.taskName, group: row.owner, leaf: row.leaf,
+              condition: row.condition || null, manual,
+              tpl: doc.tpl || null, kind: doc.kind, format: doc.format,
+              skeleton: doc.skeleton || null, note: doc.note || row.note || "",
+              title: fillDocTitle(doc.title, period, row) + suffix,
+              status: "pending", body: "", error: "",
+            });
+          });
+        }
+      });
+      return { items, conditions, period };
+    };
+
+    // 사서 수량 입력이 필요한 행(manual) — 목록에 입력칸을 노출한다
+    const manualDocRows = () =>
+      DOC_MANIFEST.map((row, rowIndex) => ({ row, rowIndex }))
+        .filter(x => String(x.row.repeat) === "manual");
+
     const isoWeekInfo = (d = new Date()) => {
       const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
       const day = date.getUTCDay() || 7;
@@ -3947,10 +4061,127 @@ ${FILE_DOWNLOAD_RULE}
       return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}. ${p(d.getHours())}:${p(d.getMinutes())}`;
     };
     // run·onConfirm·onReopen은 chief 콘솔에서만 넘어온다(리프 탭에서는 없이 호출 — 기존 동작 유지).
+    // 생성 목록 체크리스트 (설계 6.1 · 4단계 — 목록까지만, 생성은 5단계)
+    // 확정본에서 코드가 계산한 문서 목록을 보여주고, 사서가 체크를 풀거나 수량을 넣는다.
+    function DocBundleChecklist({ run, onClose }) {
+      const [manualCounts, setManualCounts] = useState({});
+      const [unchecked, setUnchecked] = useState({});
+      const manualRows = useMemo(() => manualDocRows(), []);
+      const { items, conditions, period } = useMemo(
+        () => buildDocChecklist(run, manualCounts), [run, manualCounts]);
+
+      const buildable = items.filter(it => it.format !== "none");
+      const selected = buildable.filter(it => !unchecked[it.key]);
+      const groups = [];
+      items.forEach(it => {
+        const label = DM_LABELS[it.group] || it.group || "기타";
+        let g = groups.find(x => x.label === label);
+        if (!g) { g = { label, items: [] }; groups.push(g); }
+        g.items.push(it);
+      });
+      const counts = selected.reduce((acc, it) => {
+        acc[it.format] = (acc[it.format] || 0) + 1; return acc;
+      }, {});
+      const minutes = Math.max(1, Math.round(selected.length * 0.25));
+
+      const rowStyle = { display: "flex", alignItems: "flex-start", gap: "8px", padding: "5px 0", fontSize: "12.5px", lineHeight: "1.6" };
+      const btn = { padding: "5px 12px", border: "1px solid var(--line-strong)", borderRadius: "6px", background: "white", color: "var(--chrome)", fontSize: "12px", fontWeight: "700", fontFamily: "inherit", cursor: "pointer" };
+
+      return (
+        <div style={{ borderBottom: "1px solid var(--line)", background: "var(--bg-sunken)", padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+            <span style={{ fontSize: "13px", fontWeight: "800", color: "var(--ink)" }}>
+              📦 {period.year}년 {period.month}월 실행 문서 — {buildable.length}건 예정
+            </span>
+            <div style={{ display: "flex", gap: "6px", marginLeft: "auto" }}>
+              <button style={btn} onClick={() => setUnchecked({})}>모두 선택</button>
+              <button style={btn} onClick={() => {
+                const next = {}; buildable.forEach(it => { next[it.key] = true; }); setUnchecked(next);
+              }}>모두 해제</button>
+              {onClose ? <button style={btn} onClick={onClose}>닫기</button> : null}
+            </div>
+          </div>
+
+          {manualRows.length ? (
+            <div style={{ border: "1px solid var(--line)", borderRadius: "6px", background: "white", padding: "9px 11px", marginBottom: "10px" }}>
+              <div style={{ fontSize: "11.5px", fontWeight: "800", color: "var(--muted)", marginBottom: "6px" }}>
+                수량 입력 — 코드가 셀 수 없는 업무입니다(기본 0)
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
+                {manualRows.map(({ row, rowIndex }) => {
+                  const key = `${row.taskName}#${rowIndex}`;
+                  return (
+                    <label key={key} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px" }}>
+                      <span>{row.taskName}{row.unitLabel ? ` (${row.unitLabel})` : ""}</span>
+                      <input type="number" min="0" max="30" value={manualCounts[key] || 0}
+                        onChange={e => setManualCounts(v => ({ ...v, [key]: Math.max(0, +e.target.value || 0) }))}
+                        style={{ width: "54px", padding: "3px 6px", border: "1px solid var(--line-strong)", borderRadius: "5px", fontFamily: "inherit", fontSize: "12.5px" }} />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div style={{ border: "1px solid var(--line)", borderRadius: "6px", background: "white", padding: "8px 12px" }}>
+            {groups.length === 0 ? (
+              <div style={{ fontSize: "12.5px", color: "var(--muted)", padding: "6px 0" }}>
+                이 기간에 해당하는 문서가 없습니다.
+              </div>
+            ) : groups.map(g => (
+              <div key={g.label} style={{ marginBottom: "8px" }}>
+                <div style={{ fontSize: "11.5px", fontWeight: "800", color: "var(--accent)", margin: "4px 0" }}>{g.label}</div>
+                {g.items.map(it => {
+                  const none = it.format === "none";
+                  const missing = !it.tpl && !none;
+                  return (
+                    <div key={it.key} style={rowStyle}>
+                      <input type="checkbox" disabled={none} checked={!none && !unchecked[it.key]}
+                        onChange={() => setUnchecked(v => ({ ...v, [it.key]: !v[it.key] }))}
+                        style={{ marginTop: "3px" }} />
+                      <div style={{ flex: 1, color: none ? "var(--muted)" : "var(--ink)" }}>
+                        <span style={{ fontWeight: none ? "400" : "600" }}>{it.title}</span>
+                        <span style={{ color: "var(--muted)" }}>
+                          {" "}({it.kind}{it.format !== "hwpx" ? `·${it.format}` : ""}{it.tpl ? `·${it.tpl}` : ""})
+                        </span>
+                        {missing ? <span style={{ marginLeft: "6px", color: "var(--warn)", fontWeight: "700" }}>⚠ 양식 미등록 — 기본형으로 생성</span> : null}
+                        {none ? <span style={{ marginLeft: "6px", color: "var(--muted)" }}>· 디자인 필요, 번들 제외</span> : null}
+                        {it.condition ? <span style={{ marginLeft: "6px", color: "var(--muted)" }}>· 조건부({it.condition})</span> : null}
+                        {it.note ? <div style={{ color: "var(--muted)", fontSize: "11.5px" }}>{it.note}</div> : null}
+                      </div>
+                      <span style={{ color: "var(--muted)", fontSize: "11.5px", whiteSpace: "nowrap" }}>{it.leaf || "chief"}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "10px", fontSize: "12px", color: "var(--muted)" }}>
+            <span>
+              선택 {selected.length}건 (hwpx {counts.hwpx || 0} · xlsx {counts.xlsx || 0}) · 예상 소요 {minutes}~{minutes + 2}분
+            </span>
+            <span style={{ marginLeft: "auto" }}>
+              조건부 판정: {DOC_CONDITIONS.filter(c => conditions[c.name]).map(c => c.name).join(" · ") || "해당 없음"}
+            </span>
+          </div>
+          <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <button style={{ ...btn, background: "var(--line)", color: "var(--muted)", cursor: "not-allowed" }} disabled>
+              문서 생성 시작
+            </button>
+            <span style={{ fontSize: "11.5px", color: "var(--muted)" }}>
+              생성은 5단계(문서화 패스)에서 연결됩니다 — 지금은 목록 확인까지입니다.
+            </span>
+          </div>
+        </div>
+      );
+    }
+
     function ReportDocument({ content, run, onConfirm, onReopen }) {
       const [downloading, setDownloading] = useState(false);
       const [downloadError, setDownloadError] = useState("");
       const [confirming, setConfirming] = useState(false);
+      const [bundling, setBundling] = useState(false);
       const isConfirmed = !!(run && run.stage === "confirmed" && run.confirmed);
       // 확정 후에는 동결 스냅샷을 보여준다 — 이후 채팅이 무엇을 하든 확정된 문서 내용은 흔들리지 않는다.
       const source = isConfirmed ? (run.confirmed.reportText || content) : content;
@@ -3991,6 +4222,11 @@ ${FILE_DOWNLOAD_RULE}
                     style={{ ...reportBtnStyle, cursor: "pointer", borderColor: "var(--accent)", color: "var(--accent)" }}
                   >✅ 확정</button>
                 ) : null}
+                {isConfirmed ? (
+                  <button onClick={() => setBundling(v => !v)}
+                    style={{ ...reportBtnStyle, cursor: "pointer", borderColor: "var(--accent)", color: "var(--accent)" }}
+                  >📦 실행 문서 생성</button>
+                ) : null}
                 {isConfirmed && onReopen ? (
                   <button onClick={onReopen} style={{ ...reportBtnStyle, cursor: "pointer" }}>🔓 수정하기</button>
                 ) : null}
@@ -4019,6 +4255,9 @@ ${FILE_DOWNLOAD_RULE}
                   <button onClick={() => setConfirming(false)} style={{ ...reportBtnStyle, cursor: "pointer" }}>취소</button>
                 </div>
               </div>
+            ) : null}
+            {bundling && isConfirmed ? (
+              <DocBundleChecklist run={run} onClose={() => setBundling(false)} />
             ) : null}
             <div style={{ padding: "26px 32px", background: "white" }}>
               <MarkdownRenderer text={report} />
